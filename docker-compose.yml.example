@@ -1,0 +1,38 @@
+# ============================================================================
+# FAH-Adblock – Compose-Vorlage
+# manage.sh kopiert dies bei der Erstinstallation nach docker-compose.yml und
+# lässt deine Anpassungen danach in Ruhe. Werte kommen aus der .env.
+# ============================================================================
+services:
+  fah-adblock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fah-adblock:latest
+    container_name: fah-adblock
+    restart: unless-stopped
+    # Host-Netz: nur so sieht der Blocker die echten Geräte-IPs (bei UDP-Portweiterleitung gehen sie verloren)
+    network_mode: host
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      - DNS_BIND=${DNS_BIND:-192.168.1.23}
+      - DNS_PORT=${DNS_PORT:-53}
+      - WEB_PORT=${WEB_PORT:-8053}
+      - GATEWAY=${GATEWAY:-192.168.1.1}
+      - ERLAUBTE_NETZE=${ERLAUBTE_NETZE:-192.168.1.0/24,192.168.5.0/24,127.0.0.1/32}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - VERTRAUTE_PROXIES=${VERTRAUTE_PROXIES:-}
+    volumes:
+      - ./data:/app/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

@@ -1,0 +1,15 @@
+{
+  "name": "fah-adblock",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FAH-Adblock – netzweiter DNS-Werbe- und Trackerblocker",
+  "main": "src/start.js",
+  "scripts": {
+    "start": "node src/start.js",
+    "test": "node tools/kernprobe.mjs && node tools/lizenzprobe.mjs"
+  },
+  "engines": { "node": ">=24" },
+  "dependencies": {
+    "dns-packet": "5.6.1"
+  }
+}

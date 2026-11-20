@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>FAH-Adblock – Handbuch</title>
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm 17mm;
+    @bottom-left { content: "FAH-Adblock · Handbuch"; font: 8pt -apple-system, "Helvetica Neue", Arial, sans-serif; color: #8a93a8; }
+    @bottom-right { content: "Seite " counter(page) " von " counter(pages); font: 8pt -apple-system, "Helvetica Neue", Arial, sans-serif; color: #8a93a8; } }
+  @page :first { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+  :root { --gruen: #16a36f; --gruen-hell: #e3f6ee; --rot: #e0284a; --rot-hell: #fde8ec; --gelb: #b77900; --gelb-hell: #fff4dc; --blau: #1f7fc0; --blau-hell: #e6f2fb; --text: #182033; --grau: #5d6780; --linie: #dde2ec; --dunkel: #060a13; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; font: 10.2pt/1.55 -apple-system, "Helvetica Neue", Arial, sans-serif; color: var(--text); }
+  h1, h2, h3, h4 { line-height: 1.25; margin: 0; }
+  h2 { font-size: 20pt; margin: 0 0 4mm; padding-top: 1mm; letter-spacing: -.2px; }
+  h2 .nr { color: var(--gruen); margin-right: 3mm; }
+  h3 { font-size: 12.5pt; margin: 6mm 0 2mm; }
+  h4 { font-size: 10.5pt; margin: 4mm 0 1.5mm; }
+  p { margin: 0 0 2.6mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5.5mm; }
+  li { margin: 0 0 1.2mm; }
+  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; }
+  code { background: #eef1f6; padding: .3mm 1.2mm; border-radius: 1mm; white-space: nowrap; }
+  pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.8pt; background: #0d1422; color: #dfe6f5; padding: 3mm 4mm; border-radius: 2mm; margin: 0 0 3mm; white-space: pre-wrap; break-inside: avoid; }
+  b, strong { font-weight: 650; }
+  .kapitel { break-before: page; }
+  .unteilbar { break-inside: avoid; }
+  figure { margin: 3mm 0 4mm; break-inside: avoid; text-align: center; }
+  h3, h4 { break-after: avoid; page-break-after: avoid; }
+  figure img { max-width: 100%; max-height: 118mm; object-fit: contain; border-radius: 2mm; border: 1px solid var(--linie); box-shadow: 0 1mm 3mm rgba(0,0,0,.08); }
+  figure.schmal img { max-width: 62%; } figure.halb img { max-width: 48%; } figure.klein img { max-width: 78%; }
+  figcaption { font-size: 8.6pt; color: var(--grau); margin-top: 1.5mm; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; font-size: 9.4pt; break-inside: auto; }
+  th { text-align: left; font-size: 8.4pt; text-transform: uppercase; letter-spacing: .5px; color: var(--grau); border-bottom: 1.5px solid var(--linie); padding: 1.6mm 2mm; }
+  td { border-bottom: 1px solid var(--linie); padding: 1.8mm 2mm; vertical-align: top; }
+  tr { break-inside: avoid; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .kasten { border-radius: 2mm; padding: 3mm 4mm; margin: 2mm 0 4mm; break-inside: avoid; border-left: 1.2mm solid; }
+  .kasten > :last-child { margin-bottom: 0; }
+  .kasten .titel { font-weight: 700; display: block; margin-bottom: 1mm; }
+  .tipp { background: var(--gruen-hell); border-color: var(--gruen); }
+  .achtung { background: var(--gelb-hell); border-color: var(--gelb); }
+  .wichtig { background: var(--rot-hell); border-color: var(--rot); }
+  .info { background: var(--blau-hell); border-color: var(--blau); }
+  .schritte { counter-reset: s; list-style: none; padding: 0; }
+  .schritte > li { counter-increment: s; position: relative; padding-left: 10mm; margin-bottom: 2.6mm; break-inside: avoid; }
+  .schritte > li::before { content: counter(s); position: absolute; left: 0; top: -.3mm; width: 6.4mm; height: 6.4mm; border-radius: 50%; background: var(--gruen); color: #fff; font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center; }
+  .pfad { display: inline; font-weight: 600; color: #0f3d63; }
+  .pfad i { font-style: normal; color: var(--grau); margin: 0 1mm; }
+  .zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; align-items: start; }
+  .chip { display: inline-block; font-size: 8.4pt; font-weight: 600; padding: .2mm 2mm; border-radius: 3mm; background: #eef1f6; }
+  .chip.g { background: var(--gruen-hell); color: #0b6b47; } .chip.r { background: var(--rot-hell); color: #a3122f; } .chip.y { background: var(--gelb-hell); color: #7a5100; }
+
+  /* Deckblatt */
+  .deckblatt { height: 297mm; background: radial-gradient(120% 70% at 80% 0%, #10304a 0%, #060a13 55%), #060a13; color: #e9edf7; position: relative; overflow: hidden; padding: 30mm 22mm; }
+  .deckblatt .wand { position: absolute; top: 0; bottom: 0; left: 74%; width: 22mm; background:
+      repeating-linear-gradient(0deg, transparent 0 6.2mm, #060a13 6.2mm 7mm),
+      linear-gradient(90deg, #1b2740, #111a2c); border-left: 1.2mm solid #40e0a0; box-shadow: -3mm 0 10mm rgba(64,224,160,.35); opacity: .9; }
+  .deckblatt .wand::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 10.5mm, #060a13 10.5mm 11mm); mask: repeating-linear-gradient(0deg, #000 0 7mm, transparent 7mm 14mm); }
+  .deckblatt .punkt { position: absolute; }
+  .deckblatt .logo { display: flex; align-items: center; gap: 5mm; position: relative; }
+  .deckblatt h1 { font-size: 40pt; letter-spacing: -1px; }
+  .deckblatt .unter { font-size: 12pt; letter-spacing: 3px; color: #8fa0bf; text-transform: uppercase; margin-top: 2mm; }
+  .deckblatt .titel { position: absolute; left: 22mm; bottom: 42mm; width: 110mm; }
+  .deckblatt .titel h2 { font-size: 30pt; color: #fff; margin-bottom: 4mm; }
+  .deckblatt .titel p { color: #a9b4cc; font-size: 11.5pt; }
+  .deckblatt .fuss { position: absolute; left: 22mm; bottom: 18mm; color: #77819a; font-size: 9pt; }
+
+  /* Inhaltsverzeichnis */
+  .inhalt ol { list-style: none; padding: 0; counter-reset: k; }
+  .inhalt li { counter-increment: k; display: flex; gap: 3mm; padding: 2.2mm 0; border-bottom: 1px dotted var(--linie); font-size: 11pt; }
+  .inhalt li::before { content: counter(k); color: var(--gruen); font-weight: 700; width: 7mm; }
+  .inhalt li span { color: var(--grau); font-size: 9.2pt; margin-left: auto; text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- ─────────────────────────── Deckblatt ─────────────────────────── -->
+<section class="deckblatt">
+  <div class="wand"></div>
+  <svg class="punkt" style="left:40%;top:38%" width="4mm" height="4mm" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#ff3b5c" opacity=".35"/><circle cx="5" cy="5" r="2.6" fill="#ff3b5c"/></svg>
+  <svg class="punkt" style="left:48%;top:52%" width="4mm" height="4mm" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#40e0a0" opacity=".35"/><circle cx="5" cy="5" r="2.6" fill="#40e0a0"/></svg>
+  <svg class="punkt" style="left:30%;top:61%" width="4mm" height="4mm" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#ff3b5c" opacity=".35"/><circle cx="5" cy="5" r="2.6" fill="#ff3b5c"/></svg>
+  <svg class="punkt" style="left:74%;top:47%" width="4mm" height="4mm" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#dfe6f5" opacity=".35"/><circle cx="5" cy="5" r="2.6" fill="#dfe6f5"/></svg>
+  <svg class="punkt" style="left:86%;top:33%" width="4mm" height="4mm" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#dfe6f5" opacity=".35"/><circle cx="5" cy="5" r="2.6" fill="#dfe6f5"/></svg>
+  <div class="logo">
+    <svg width="22mm" height="22mm" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 5 54 13v17c0 14-9.5 24-22 29C19.5 54 10 44 10 30V13z" fill="rgba(64,224,160,.12)" stroke="#40e0a0" stroke-width="3.5" stroke-linejoin="round"/><path d="m22 32 7 7 14-15" fill="none" stroke="#40e0a0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div><h1>FAH-Adblock</h1><div class="unter">DNS-Schutzschild</div></div>
+  </div>
+  <div class="titel">
+    <h2>Handbuch</h2>
+    <p>Einrichtung, Bedienung und jede Einstellung erklärt – inklusive der DNS-Einrichtung in UniFi.</p>
+  </div>
+  <div class="fuss">Version 2026.09.16-20 · Stand 15. September 2026 · © 2026 Fabian Hammer</div>
+</section>
+
+<!-- ─────────────────────────── Inhalt ─────────────────────────── -->
+<section class="kapitel inhalt">
+  <h2>Inhalt</h2>
+  <ol>
+    <li>Wie FAH-Adblock arbeitet <span>Die Wand zwischen Heimnetz und Internet</span></li>
+    <li>Auf einen Blick <span>Adressen, Anmeldung, erste Schritte</span></li>
+    <li>Einrichtung in UniFi (DNS) <span>DHCP, VPN, Inhaltsfilter, Geräte umstellen</span></li>
+    <li>Geräte prüfen und Sonderfälle <span>Manuelle DNS, sicheres DNS im Browser, Rückbau</span></li>
+    <li>Schutzschild <span>Live-Wand, Kennzahlen, Pause</span></li>
+    <li>Geräte und Rettung <span>Profil, Pause je Gerät, Ein-Klick-Freigabe</span></li>
+    <li>Protokoll <span>Jede Anfrage mit Grund und Beschreibung</span></li>
+    <li>Listen &amp; Regeln <span>Domain prüfen, Block- und Freigabelisten, eigene Regeln</span></li>
+    <li>Dienste <span>waipu, YouTube, Social Media &amp; Co. – geschützt, nach Listen oder gesperrt</span></li>
+    <li>Profile und Zeitfenster <span>Kinder, Unbeschränkt, eigene Profile, Dienste je Profil</span></li>
+    <li>Statistik</li>
+    <li>Einstellungen <span>Jede Einstellung erklärt</span></li>
+    <li>Betrieb auf dem NAS <span>manage.sh, Update, Sicherung</span></li>
+    <li>Fehlerbehebung <span>Wenn etwas nicht geht</span></li>
+    <li>Anhang <span>Entscheidungsreihenfolge, Ports, Dateien</span></li>
+  </ol>
+</section>
+
+<!-- ─────────────────────────── 1 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">1</span>Wie FAH-Adblock arbeitet</h2>
+  <p>Bevor ein Gerät eine Webseite, eine App oder einen Werbebanner lädt, fragt es nach der Adresse: „Welche IP hat <code>doubleclick.net</code>?“ Diese Frage heißt <b>DNS-Anfrage</b>. FAH-Adblock beantwortet sie für alle Geräte im Heimnetz und im VPN – und steht damit wie eine <b>Wand zwischen Heimnetz und Internet</b>:</p>
+  <ul>
+    <li><span class="chip r">geblockt</span> Steht die Domain auf einer Sperrliste, antwortet FAH-Adblock mit „gibt es nicht“ (<code>0.0.0.0</code>). Werbung, Tracker und Schadsoftware laden gar nicht erst – auf jedem Gerät, ohne App oder Browser-Erweiterung.</li>
+    <li><span class="chip g">erlaubt</span> Alles andere reicht FAH-Adblock <b>verschlüsselt</b> (DNS-over-HTTPS) an Quad9 weiter und merkt sich die Antwort. Der Internetanbieter sieht dadurch nicht mehr, welche Seiten aufgerufen werden.</li>
+    <li><span class="chip">lokal</span> Namen aus dem Heimnetz (z. B. <code>example.org</code>, Gerätenamen) fragt FAH-Adblock beim UniFi-Gateway nach – ungefiltert.</li>
+  </ul>
+  <div class="kasten info"><span class="titel">Was DNS-Blocken kann – und was nicht</span>
+    <p>FAH-Adblock sperrt ganze Domains. Werbung, die von derselben Domain kommt wie der eigentliche Inhalt, lässt sich so nicht trennen – etwa Werbung in YouTube-Videos, Instagram- oder Facebook-Beiträgen. Dafür wirkt der Schutz auf jedem Gerät: Fernseher, Konsole, Handy-Apps, Drucker.</p></div>
+  <h3>Wenn das NAS ausfällt</h3>
+  <p>Jedes Gerät bekommt von UniFi <b>zwei</b> DNS-Server: zuerst FAH-Adblock (<code>192.168.1.23</code>), danach das Gateway (<code>192.168.1.1</code>). Antwortet das NAS nicht, fragen die Geräte automatisch das Gateway. Das Internet läuft also weiter – nur eben ungefiltert, bis das NAS wieder läuft.</p>
+  <div class="kasten achtung"><span class="titel">Bewusster Kompromiss</span>
+    <p>Manche Geräte (vor allem Android-Handys) fragen den zweiten DNS-Server auch dann, wenn der erste funktioniert – diese Anfragen laufen ungefiltert am Blocker vorbei. Bei Erwachsenen-Geräten rutscht dadurch vereinzelt Werbung durch. <b>Bei Kindergeräten ist das eine Lücke im Jugendschutz</b>; dafür gibt es eine eigene Firewall-Regel (Kapitel 3, Schritt 7). Wer gar keine Umgehung möchte, trägt in UniFi nur <code>192.168.1.23</code> ein – fällt das NAS dann aus, geht im ganzen Heimnetz kein Internet mehr.</p></div>
+  <h3>Die Filterstufen in Kürze</h3>
+  <ol>
+    <li><b>Pause</b> – ist der Schutz (für alle oder für das Gerät) pausiert, wird nichts geblockt.</li>
+    <li><b>Deine Freigaben</b> – unter „Eigene Regeln“ erlaubte Domains gehen immer durch.</li>
+    <li><b>Deine Sperrregeln</b> – selbst gesperrte Domains werden immer geblockt.</li>
+    <li><b>Geschützte Dienste</b> – Streaming, Mediatheken, Musik und Geräte-Grundfunktionen blockt keine Liste; nur du kannst sie sperren.</li>
+    <li><b>Blocklisten</b> – geblockt wird nur, wenn die Kategorie der Liste im <b>Profil</b> des Geräts gerade gesperrt ist. Freigabelisten können Sperren der Kategorie „Werbung &amp; Tracker“ wieder aufheben.</li>
+    <li><b>Getarnte Tracker</b> – leitet eine erlaubte Domain per CNAME auf einen gesperrten Tracker weiter, wird auch sie geblockt.</li>
+  </ol>
+  <p>Die vollständige Reihenfolge steht im <a href="#anhang">Anhang</a>.</p>
+</section>
+
+<!-- ─────────────────────────── 2 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">2</span>Auf einen Blick</h2>
+  <table>
+    <tr><th>Was</th><th>Wert</th><th>Hinweis</th></tr>
+    <tr><td>Weboberfläche</td><td class="mono">http://192.168.1.23:8053</td><td>nur aus Heimnetz und VPN erreichbar</td></tr>
+    <tr><td>DNS-Server</td><td class="mono">192.168.1.23 : 53</td><td>UDP und TCP</td></tr>
+    <tr><td>Rückfall-DNS</td><td class="mono">192.168.1.1</td><td>UniFi-Gateway (DNS 2)</td></tr>
+    <tr><td>Anmeldung</td><td>Name <code>admin</code></td><td>Startpasswort <code>admin</code> – sofort ändern</td></tr>
+    <tr><td>Gefilterte Netze</td><td class="mono">192.168.1.0/24<br>192.168.5.0/24</td><td>Homelab<br>WireGuard-VPN</td></tr>
+    <tr><td>Verschlüsselt nach außen</td><td>Quad9, Rückfall Cloudflare</td><td>DNS-over-HTTPS</td></tr>
+    <tr><td>Speicherort NAS</td><td class="mono">/volume3/docker/fah-adblock</td><td>Daten in <code>data/</code></td></tr>
+  </table>
+
+  <h3>Anmelden</h3>
+  <div class="zwei">
+    <div>
+      <ol class="schritte">
+        <li>Im Browser <code>http://192.168.1.23:8053</code> öffnen (von unterwegs vorher WireGuard einschalten).</li>
+        <li>Name <b>admin</b> und Passwort eingeben. Die Anmeldung bleibt 30 Tage gespeichert.</li>
+        <li>Solange das Startpasswort gilt, erscheint oben ein gelber Hinweis. Über <b>Passwort ändern</b> ein eigenes Passwort mit mindestens 8 Zeichen setzen.</li>
+      </ol>
+      <div class="kasten tipp"><span class="titel">Schutz vor Ausprobieren</span><p>Nach 10 falschen Passwörtern sperrt FAH-Adblock weitere Versuche von diesem Gerät für 15 Minuten.</p></div>
+    </div>
+    <figure><img src="bilder/01-anmeldung.jpg" alt="Anmeldung" style="max-height:78mm"><figcaption>Anmeldeseite</figcaption></figure>
+  </div>
+
+  <h3>Erste Schritte nach der Installation</h3>
+  <ol class="schritte">
+    <li><b>Passwort ändern</b> – Einstellungen → Konto &amp; Sicherung.</li>
+    <li><b>UniFi-Zugang eintragen</b> – Einstellungen → UniFi (Gerätenamen). Dann stehen überall Gerätenamen statt IP-Adressen.</li>
+    <li><b>DNS in UniFi umstellen</b> – Kapitel 3. Erst ab hier filtert FAH-Adblock tatsächlich.</li>
+    <li><b>Geräte prüfen</b> – unter <i>Geräte</i> tauchen alle Geräte auf, die FAH-Adblock nutzen (Kapitel 4).</li>
+    <li><b>Profile zuordnen</b> – z. B. Kindergeräten das Profil „Kinder“ geben (Kapitel 10).</li>
+  </ol>
+</section>
+
+<!-- ─────────────────────────── 3 ─────────────────────────── -->
+<section class="kapitel" id="unifi">
+  <h2><span class="nr">3</span>Einrichtung in UniFi (DNS)</h2>
+  <p>Damit Geräte FAH-Adblock nutzen, muss UniFi ihnen die NAS-Adresse als DNS-Server mitteilen. Das passiert automatisch per DHCP – an den Geräten selbst ist normalerweise nichts einzustellen.</p>
+  <div class="kasten info"><span class="titel">Menünamen</span><p>Die Beschriftungen unterscheiden sich je nach UniFi-Network-Version und Sprache leicht. In Klammern steht jeweils die englische Bezeichnung.</p></div>
+
+  <h3>Übersicht: das ist eingestellt (Stand 17.09.2026)</h3>
+  <table>
+    <tr><th>Stelle in UniFi</th><th>Einstellung</th><th>Warum</th></tr>
+    <tr><td>Netzwerk „Homelab“ – DHCP</td><td>DNS <code>192.168.1.23</code> – <b>nur dieser eine</b></td><td>Alle Geräte im Heimnetz fragen ausschließlich FAH-Adblock. Kein zweiter Eintrag (siehe Kasten unten).</td></tr>
+    <tr><td>Netzwerk „IOT“ – DHCP</td><td>DNS <code>192.168.1.23</code> – nur dieser eine</td><td>Auch Fernseher, Steckdosen, Kameras werden gefiltert.</td></tr>
+    <tr><td>Netzwerk „Gast“ – DHCP</td><td>Automatisch (Gateway)</td><td>Gäste sind isoliert und erreichen das NAS nicht; sie laufen ungefiltert über das Gateway.</td></tr>
+    <tr><td>VPN-Server (WireGuard)</td><td>DNS 1 <code>192.168.1.23</code><br>DNS 2 <code>192.168.1.1</code><br>Serveradresse <code>example.org</code></td><td>Unterwegs per VPN gefiltert. Der zweite Eintrag bleibt bewusst (eigene Geräte, kein Kinderprofil); die Serveradresse als Hostname statt WAN-IP übersteht einen Adresswechsel bei Vodafone.</td></tr>
+    <tr><td>Internet (WAN) – DNS-Server</td><td>Automatisch</td><td>Das Gateway selbst fragt Vodafone. Der Blocker als Gateway-Upstream bringt nichts (siehe Kasten).</td></tr>
+    <tr><td>Inhaltsfilterung</td><td>alle Filter gelöscht („Fabian“, „Gäste“, „Kinder“)</td><td>Werbung und Kinderschutz regelt FAH-Adblock – doppelt gefiltert verwirrt nur.</td></tr>
+    <tr><td>Firewall-Richtlinien</td><td>„FAH-Adblock: DNS nur über NAS (Homelab)“<br>„FAH-Adblock: DNS nur über NAS (VPN)“</td><td>Geräte mit fest eingetragenen DNS-Servern (8.8.8.8, 1.1.1.1 …) können FAH-Adblock nicht mehr umgehen.</td></tr>
+    <tr><td>Lokale DNS-Einträge</td><td><code>example.org</code> → <code>192.168.1.23</code><br><code>*.example.org</code> → <code>192.168.1.23</code></td><td>FAH-Adblock fragt dafür das Gateway. Seit 17.09. ist auch der Wildcard aktiv: Alle Unterdomains (nextcloud., plex., ntfy. …) werden im Haus direkt auf das NAS aufgelöst statt über die öffentliche Adresse.</td></tr>
+  </table>
+  <div class="kasten wichtig"><span class="titel">Warum nur ein DNS-Server je Netz (Erkenntnis vom 17.09.2026)</span><p>Ein zweiter DNS-Server als „Reserve“ ist keine Reserve, sondern eine Dauerabkürzung: Android, Windows und die meisten IoT-Geräte fragen beide Server abwechselnd oder den schnelleren – nicht erst bei Ausfall. Im IoT-Netz kamen so nur 68 Anfragen am Tag beim Blocker an, der Rest lief ungefiltert über das Gateway. Der Versuch, das Gateway seinerseits auf den Blocker zu lenken (WAN-DNS <code>192.168.1.23</code> + Reserve), scheitert am Gateway-Resolver: Er nimmt den <i>schnellsten</i> Upstream, nicht den ersten – Messung: 0 von 12 Werbedomains geblockt. Deshalb: <b>ein DNS-Server</b>. Preis: Startet das NAS neu, gibt es einige Minuten keine Namensauflösung (ein Container-Update dauert ~10 Sekunden; Browser und Apps puffern Namen).</p></div>
+  <table style="display:none">
+  </table>
+
+  <h3>Schritt 1 – DNS für das Heimnetz (DHCP)</h3>
+  <ol class="schritte">
+    <li>UniFi Network öffnen: <span class="pfad">Einstellungen (Settings) <i>›</i> Netzwerke (Networks)</span>.</li>
+    <li>Das Netzwerk <b>Homelab</b> anklicken.</li>
+    <li>Zum Bereich <b>DHCP</b> scrollen (ggf. „Manuell“ bzw. „Erweitert“ aufklappen). DHCP-Modus bleibt <b>DHCP-Server</b>.</li>
+    <li>Bei <b>DNS-Server (DNS Server)</b> den Haken <b>Automatisch (Auto)</b> entfernen.</li>
+    <li><b>DNS-Server 1:</b> <code>192.168.1.23</code> · <b>DNS-Server 2:</b> leer lassen.</li>
+    <li><b>Änderungen übernehmen (Apply Changes)</b>. Das Heimnetz läuft dabei ohne Unterbrechung weiter.</li>
+  </ol>
+  <div class="kasten achtung"><span class="titel">Wirkt nicht sofort auf allen Geräten</span><p>Geräte übernehmen den neuen DNS-Server erst, wenn sie ihre Adresse erneuern: beim Neuverbinden mit dem WLAN, nach einem Neustart oder spätestens nach Ablauf der halben DHCP-Lease-Zeit (bei 24 h Lease also nach etwa 12 Stunden). Wie man das beschleunigt, steht in Schritt 4.</p></div>
+
+  <h3>Schritt 2 – DNS für das VPN (WireGuard)</h3>
+  <ol class="schritte">
+    <li><span class="pfad">Einstellungen <i>›</i> VPN <i>›</i> VPN-Server</span> öffnen und den WireGuard-Server (One-Click VPN) bearbeiten.</li>
+    <li>Unter <b>Erweitert (Advanced)</b> bei <b>DNS-Server</b> „Automatisch“ abwählen und <code>192.168.1.23</code> eintragen (ein zweiter Eintrag ist hier vertretbar, weil VPN-Clients die eigenen Geräte sind). Als <b>Serveradresse</b> den DDNS-Hostnamen <code>example.org</code> wählen, nicht die WAN-IP. Speichern.</li>
+    <li><b>Wichtig: Bereits eingerichtete VPN-Profile ändern sich dadurch nicht.</b> Die neue Einstellung steckt nur in neu heruntergeladenen Profilen. Bestehende Profile auf iPhone und Mac von Hand anpassen:
+      <ul>
+        <li>WireGuard-App öffnen → Tunnel antippen → <b>Bearbeiten</b>.</li>
+        <li>Unter <b>Interface</b> das Feld <b>DNS-Server</b> auf <code>192.168.1.23, 192.168.1.1</code> setzen (bisher <code>192.168.5.1</code>).</li>
+        <li>Speichern, Tunnel einmal aus- und wieder einschalten.</li>
+      </ul>
+      Alternativ in UniFi für das Gerät ein neues Profil (QR-Code bzw. Datei) erzeugen und in der App ersetzen.</li>
+  </ol>
+  <pre>[Interface]
+PrivateKey = … (unverändert lassen)
+Address    = 192.168.5.2/32
+DNS        = 192.168.1.23, 192.168.1.1</pre>
+</section>
+
+<section>
+  <h3>Schritt 3 – UniFi-Inhaltsfilter entfernen</h3>
+  <p>UniFi hat eigene, einfache Filter (Werbung, Familie). Neben FAH-Adblock führen sie zu doppelten Sperren, die in FAH-Adblock weder sichtbar sind noch per Rettung freigegeben werden können. Außerdem fängt ein aktiver UniFi-Filter die DNS-Anfragen seiner Geräte selbst ab – vorbei an FAH-Adblock und an der Firewall-Regel aus Schritt 6. Deshalb sind alle UniFi-Filter gelöscht.</p>
+  <ol class="schritte">
+    <li><b>Zuerst</b> in FAH-Adblock allen Kindergeräten das Profil <b>Kinder</b> geben (Kapitel 6 bzw. 9) – sonst sind sie nach dem Löschen kurz ohne Jugendschutz.</li>
+    <li><span class="pfad">Einstellungen <i>›</i> CyberSecure (bzw. Sicherheit / Security) <i>›</i> Inhaltsfilterung (Content Filtering)</span> öffnen.</li>
+    <li>Jeden Filter öffnen und <b>löschen</b> (hier: „Fabian“, „Gäste“, „Kinder“).</li>
+    <li>Falls es in der verwendeten Version zusätzlich den Schalter <b>Werbeblocker (Ad Blocking)</b> für das Netzwerk gibt: für <b>Homelab</b> ausschalten.</li>
+    <li>UniFi rollt das auf Gateway und Access Points aus – das dauert einige Minuten.</li>
+  </ol>
+  <div class="kasten info"><span class="titel">Was der UniFi-Filter „Kinder“ enthielt</span><p>Nur die Kategorie <b>Familie</b> – kein SafeSearch, keine eigenen Listen. Das Profil „Kinder“ in FAH-Adblock deckt das ab und sperrt zusätzlich Glücksspiel und abends Social Media. Die 8 Geräte des UniFi-Filters haben das FAH-Profil „Kinder“ bekommen. Die UniFi-Firewall-Regeln „Kids Weekend“/„Kids Workingdays“ (Internet-Sperrzeiten) sind davon unberührt.</p></div>
+
+  <h3>Schritt 4 – Geräte auf den neuen DNS bringen</h3>
+  <p>Am schnellsten geht es, wenn sich die Geräte neu verbinden:</p>
+  <table>
+    <tr><th>Gerät</th><th>So übernimmt es den neuen DNS</th></tr>
+    <tr><td>WLAN-Geräte allgemein</td><td>WLAN kurz aus- und einschalten. In UniFi unter <b>Clients</b> → Gerät → <b>Neu verbinden (Reconnect)</b> geht es auch aus der Ferne.</td></tr>
+    <tr><td>Fernseher, Konsole, Drucker</td><td>In UniFi „Neu verbinden“ oder Gerät kurz vom Strom nehmen.</td></tr>
+    <tr><td>Windows-PC</td><td>Eingabeaufforderung: <code>ipconfig /renew</code></td></tr>
+    <tr><td>Mac</td><td>WLAN aus/ein oder <span class="pfad">Systemeinstellungen <i>›</i> Netzwerk <i>›</i> Details <i>›</i> TCP/IP <i>›</i> DHCP-Lease erneuern</span></td></tr>
+    <tr><td>iPhone / iPad</td><td>WLAN aus/ein oder <span class="pfad">WLAN <i>›</i> (i) <i>›</i> Lease erneuern</span></td></tr>
+    <tr><td>Kabelgeräte</td><td>Netzwerkkabel kurz ziehen oder Gerät neu starten.</td></tr>
+  </table>
+
+  <h3>Schritt 5 – Kontrolle</h3>
+  <ol class="schritte">
+    <li>In FAH-Adblock <b>Geräte</b> öffnen: Jedes umgestellte Gerät erscheint dort mit Namen und grünem Aktiv-Punkt.</li>
+    <li>Am Gerät eine Domain prüfen, z. B. im Terminal bzw. in der Eingabeaufforderung:
+<pre>nslookup doubleclick.net
+→ Server: 192.168.1.23   Address: 0.0.0.0   (= geblockt, alles richtig)</pre></li>
+    <li>Im <b>Protokoll</b> erscheint die Anfrage mit dem Vermerk <span class="chip r">geblockt</span>.</li>
+  </ol>
+
+  <h3>Schritt 6 – Umgehung über fest eingetragene DNS-Server sperren</h3>
+  <p>Manche Geräte und Apps ignorieren den DNS-Server von UniFi und fragen fest eingestellte Server wie <code>8.8.8.8</code> oder <code>1.1.1.1</code> (im Heimnetz aufgefallen: Gast-tab, Uwe Smartphone, Drucker). Zwei Firewall-Richtlinien sperren das – die Geräte weichen dann von selbst auf FAH-Adblock aus:</p>
+  <ol class="schritte">
+    <li><span class="pfad">Einstellungen <i>›</i> Sicherheit (Security) <i>›</i> Firewall-Richtlinien (Policy Table / Zone-Based Firewall)</span> <i>›</i> <b>Richtlinie erstellen (Create Policy)</b>.</li>
+    <li>Richtlinie 1 anlegen:</li>
+  </ol>
+  <table>
+    <tr><th>Feld</th><th>Homelab</th><th>VPN</th></tr>
+    <tr><td>Name</td><td>FAH-Adblock: DNS nur über NAS (Homelab)</td><td>FAH-Adblock: DNS nur über NAS (VPN)</td></tr>
+    <tr><td>Aktion</td><td>Blockieren (Block)</td><td>Blockieren (Block)</td></tr>
+    <tr><td>Quelle</td><td>Zone <b>Homelab</b>, IP <code>192.168.1.23</code> mit „Gegenteil“ (Match Opposite) = alle außer dem NAS</td><td>Zone <b>VPN</b>, beliebig</td></tr>
+    <tr><td>Ziel</td><td>Zone <b>External</b>, beliebig, Port <code>53</code></td><td>Zone <b>External</b>, beliebig, Port <code>53</code></td></tr>
+    <tr><td>Protokoll</td><td>TCP und UDP</td><td>TCP und UDP</td></tr>
+    <tr><td>IP-Version</td><td>IPv4</td><td>IPv4 und IPv6</td></tr>
+  </table>
+  <ul>
+    <li><b>Das NAS ist ausgenommen</b>, weil es selbst externe DNS-Server nutzt (Kapitel 4).</li>
+    <li><b>Das Gateway bleibt erreichbar</b> (Zone Gateway ist nicht betroffen) – für lokale Namen und DHCP.</li>
+    <li><b>Für das IoT-Netz gibt es diese Regel noch nicht.</b> IoT-Geräte mit fest eingebautem DNS fragen weiter am Blocker vorbei. Eine gleiche Regel für die Zone IoT schließt das – Risiko: ein Gerät, das nur seinen eingebauten DNS kennt und nicht auf DHCP zurückfällt, wäre offline. Erst mit einem Gerät testen.</li>
+    <li><b>Port 853 (DNS-over-TLS) bleibt bewusst offen:</b> Ein Android-Handy mit fest eingestelltem „Privatem DNS“ hätte sonst gar kein Internet mehr. Verschlüsseltes DNS über Port 443 lässt sich per Firewall ohnehin nicht erkennen.</li>
+    <li>Nach dem Speichern dauert es rund 4 Minuten, bis die Regel greift.</li>
+  </ul>
+  <p><b>Test</b> am Mac oder PC: <code>nslookup example.com 8.8.8.8</code> läuft ins Leere (gewollt), <code>nslookup example.com 192.168.1.23</code> antwortet.</p>
+
+  <h3>Schritt 7 – Kindergeräte: kein zweiter DNS (seit 17.09. erledigt)</h3>
+  <p>Die früher hier beschriebene Zusatzregel „Kindergeräte nur DNS über NAS“ ist nicht mehr nötig: Seit das Homelab-Netz nur noch <b>einen</b> DNS-Server verteilt, gibt es für Kindergeräte keinen Umweg über das Gateway mehr. Der Vollständigkeit halber die alte Idee:</p>
+  <p>Android-Handys fragen oft den zweiten DNS-Server (das Gateway) – ungefiltert. Für Kindergeräte schließt eine weitere Richtlinie diese Lücke:</p>
+  <table>
+    <tr><th>Feld</th><th>Wert</th></tr>
+    <tr><td>Name</td><td>FAH-Adblock: Kindergeräte nur DNS über NAS</td></tr>
+    <tr><td>Aktion</td><td>Blockieren</td></tr>
+    <tr><td>Quelle</td><td>Zone <b>Homelab</b>, Clients: alle Geräte mit FAH-Profil „Kinder“ (Nintendo Switch, Gast Smartphone NEU/ALT, Gast-tab, papa-Lenovo …)</td></tr>
+    <tr><td>Ziel</td><td>Zone <b>Gateway</b>, Port <code>53</code>, TCP und UDP</td></tr>
+  </table>
+  <div class="kasten info"><span class="titel">Überholt</span><p>Diese Regel ist noch nicht aktiv. Nebenwirkung: Fällt das NAS aus, haben nur die Kindergeräte kein Internet (Erwachsene weichen weiter auf das Gateway aus). Bei neuen Kindergeräten muss die Geräteliste der Regel ergänzt werden.</p></div>
+</section>
+
+<!-- ─────────────────────────── 4 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">4</span>Geräte prüfen und Sonderfälle</h2>
+  <h3>Ein Gerät taucht nicht unter „Geräte“ auf</h3>
+  <p>Dann fragt es FAH-Adblock nicht. Die häufigsten Gründe:</p>
+  <table>
+    <tr><th>Ursache</th><th>Lösung</th></tr>
+    <tr><td>Alte DHCP-Lease</td><td>Gerät neu verbinden (Kapitel 3, Schritt 4). Typisch: Das Gerät fragt nur das Gateway.</td></tr>
+    <tr><td>DNS von Hand eingetragen</td><td>
+      <b>Mac:</b> <span class="pfad">Systemeinstellungen <i>›</i> Netzwerk <i>›</i> WLAN/Ethernet <i>›</i> Details <i>›</i> DNS</span> – alle Einträge mit „–“ entfernen (bei WLAN <i>und</i> Kabel jeweils prüfen).<br>
+      <b>iPhone:</b> <span class="pfad">WLAN <i>›</i> (i) <i>›</i> DNS konfigurieren</span> → <b>Automatisch</b>.<br>
+      <b>Windows:</b> <span class="pfad">Netzwerkadapter <i>›</i> IPv4 <i>›</i> Eigenschaften</span> → „DNS-Serveradresse automatisch beziehen“.<br>
+      <b>Android:</b> <span class="pfad">Einstellungen <i>›</i> Netzwerk <i>›</i> Privates DNS</span> → <b>Aus</b> bzw. <b>Automatisch</b> (ein eingetragener Anbieter umgeht FAH-Adblock).</td></tr>
+    <tr><td>Sicheres DNS im Browser</td><td>Chrome/Edge: <span class="pfad">Einstellungen <i>›</i> Datenschutz <i>›</i> Sicherheit <i>›</i> Sicheres DNS</span> auf „Aktuellen Dienstanbieter verwenden“. Firefox erkennt FAH-Adblock selbst und schaltet sein eigenes DNS ab (Prüf-Domain <code>use-application-dns.net</code>).</td></tr>
+    <tr><td>iCloud Privat-Relay</td><td>Safari-Anfragen laufen dann über Apple. Pro WLAN abschaltbar: <span class="pfad">WLAN <i>›</i> (i) <i>›</i> IP-Adresse verbergen / Privat-Relay</span>.</td></tr>
+    <tr><td>Fremdes Netz</td><td>Nur <code>192.168.1.0/24</code> und <code>192.168.5.0/24</code> dürfen fragen. Weitere Netze unter Einstellungen → Netz → Erlaubte Netze.</td></tr>
+  </table>
+
+  <h3>Das NAS selbst</h3>
+  <p>Das NAS nutzt bewusst eigene, feste DNS-Server und <b>nicht</b> FAH-Adblock – deshalb ist es von der Firewall-Sperre ausgenommen. So startet es auch dann sauber, wenn FAH-Adblock gerade aktualisiert wird. Für seine eigenen Verbindungen (Blocklisten laden, verschlüsseltes DNS) löst FAH-Adblock Namen selbst auf – ein Henne-Ei-Problem gibt es nicht.</p>
+
+  <h3>Rückbau – falls FAH-Adblock nicht mehr genutzt werden soll</h3>
+  <ol class="schritte">
+    <li>UniFi → Netzwerke → Homelab → DHCP → DNS-Server wieder auf <b>Automatisch</b>.</li>
+    <li>UniFi → VPN-Server → DNS wieder auf <b>Automatisch</b>; in den WireGuard-Profilen DNS <code>192.168.5.1</code>.</li>
+    <li>Die Firewall-Richtlinien „FAH-Adblock: …“ löschen (sonst funktionieren Geräte mit fest eingetragenem DNS nicht).</li>
+    <li>Falls gewünscht wieder UniFi-Inhaltsfilter anlegen (Sicherung der gelöschten Filter: <code>inhaltsfilter-vorher.json</code>).</li>
+    <li>Geräte neu verbinden. Danach auf dem NAS <code>./manage.sh stop</code>.</li>
+  </ol>
+  <p>Die UniFi-Einstellungen vor und nach der Umstellung liegen gesichert unter <code>~/claude/homepage/unifi-sicherung/adblock-2026-09-15/</code>.</p>
+</section>
+
+<!-- ─────────────────────────── 5 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">5</span>Schutzschild</h2>
+  <p>Die Startseite zeigt live, was im Netz passiert.</p>
+  <figure><img src="bilder/02-schutzschild.jpg" alt="Schutzschild" style="max-height:105mm"><figcaption>Schutzschild mit Kennzahlen, Live-Wand und den zuletzt geblockten Domains</figcaption></figure>
+  <h3>Die Live-Wand</h3>
+  <ul>
+    <li><b>Links (Heimnetz)</b> stehen alle Geräte, die in den letzten 10 Minuten gefragt haben – genau so viele, wie die Kachel „Aktive Geräte“ zählt – mit ihrem <b>UniFi-Gerätesymbol</b> und Namen (Geräte ohne Symbol als grüner Punkt). Bei vielen Geräten ordnen sie sich in Spalten an, Symbole und Schrift werden kleiner. Jede Anfrage fliegt als Lichtpunkt zur Wand.</li>
+    <li><span class="chip r">rote Punkte</span> sind geblockte Anfragen: Sie prallen an der Wand ab, die getroffenen Steine glühen kurz rot.</li>
+    <li><span class="chip g">grüne Punkte</span> sind erlaubte Anfragen: Sie gehen durch einen Spalt in der Wand und fliegen weiß weiter ins Internet. Rechts erscheinen die aufgerufenen Domains.</li>
+    <li>In der Wand: <b>Geblockt</b> im gewählten Zeitraum (siehe unten). Oben rechts: <b>Anfragen pro Minute</b>.</li>
+    <li>Wechselt man den Tab oder scrollt weg, pausiert die Animation und holt beim Zurückkehren nichts nach – sie zeigt immer nur, was gerade passiert.</li>
+  </ul>
+  <h3>Zeitraum: 24 h, 7 Tage, 1 Monat</h3>
+  <p>Über den Kennzahlen sitzt der Schalter <b>Zeitraum</b>. Er gilt für die Zahlen oben, die Plakette in der Wand und die Liste „Meistgeblockt“. Alle drei Zeiträume zählen <b>gleitend ab jetzt</b>. Der gewählte Knopf ist blau hervorgehoben; die Wahl merkt sich der Browser.</p>
+  <figure class="klein"><img src="bilder/03a-zeitraum.jpg" alt="Zeitraum-Schalter" style="max-height:70mm"><figcaption>Zeitraum „7 Tage“ gewählt – Kennzahlen und Liste zählen die letzten sieben Tage</figcaption></figure>
+  <div class="kasten info"><span class="titel">Wie weit zurück?</span><p>Die <b>Stundenstatistik</b> (Anfragen, geblockt, Quote) wird 35 Tage vorgehalten – die Zahlen für 7 Tage und 1 Monat stimmen also auch rückwirkend. Die <b>Domain-Liste</b> „Meistgeblockt“ reicht nur so weit, wie das Protokoll aufbewahrt wird (Einstellungen → Netz → Protokoll aufbewahren, Standard 7 Tage); bei längerem Zeitraum steht ein Hinweis unter der Liste.</p></div>
+  <h3>Kennzahlen</h3>
+  <p>Die Kennzahlen laufen von selbst mit (alle 20 Sekunden), ein Neuladen der Seite ist nicht nötig.</p>
+  <table>
+    <tr><th>Kachel</th><th>Bedeutung</th></tr>
+    <tr><td>Anfragen · Zeitraum</td><td>Alle DNS-Anfragen im gewählten Zeitraum; darunter die Anfragen seit dem letzten Start.</td></tr>
+    <tr><td>Geblockt · Zeitraum</td><td>Geblockte Anfragen und ihr Anteil in Prozent.</td></tr>
+    <tr><td>Aktive Geräte</td><td>Geräte mit Anfragen in den letzten 10 Minuten.</td></tr>
+    <tr><td>Aus dem Speicher</td><td>Anteil der Antworten aus dem Zwischenspeicher – je höher, desto schneller.</td></tr>
+    <tr><td>Antwortzeit</td><td>Letzte Antwortzeit des verschlüsselten Anbieters (z. B. Quad9).</td></tr>
+  </table>
+  <h3>Gerade geblockt und Meistgeblockt</h3>
+  <p>Unter der Wand stehen die zuletzt geblockten Domains mit Gerät, Uhrzeit und Liste sowie die am häufigsten geblockten Domains im gewählten Zeitraum. <b>Unter jeder Domain steht, was sie ist</b>: Anbieter, wofür sie dient und ob eine Sperre Nebenwirkungen haben kann (⚠). Unbekannte Domains lassen sich per Link im Web nachschlagen. Ein Klick auf <b>Freigeben</b> öffnet die Freigabe-Auswahl (Kapitel 6).</p>
+  <figure class="klein"><img src="bilder/04-geblockt.jpg" alt="Gerade geblockt" style="max-height:92mm"><figcaption>Jede Domain mit Beschreibung – z. B. „Google Ads – misst Klicks auf Google-Anzeigen …“</figcaption></figure>
+</section>
+
+<section>
+  <h3>Pause – Schutz für alle kurz aus</h3>
+  <p>Oben rechts sitzt der Knopf <b>Pause</b>. Er schaltet den Filter für <b>alle Geräte</b> für 5 Minuten, 15 Minuten oder 1 Stunde ab. Danach schaltet sich der Schutz von selbst wieder ein; „Schutz wieder einschalten“ beendet die Pause sofort. Die Anzeige neben dem Knopf zeigt den Zustand: <span class="chip g">Schutz aktiv</span> mit dem verschlüsselten Anbieter und dessen Antwortzeit, während einer Pause <span class="chip y">pausiert bis …</span>.</p>
+  <div class="kasten tipp"><span class="titel">Lieber gezielt</span><p>Geht nur auf einem Gerät etwas nicht, besser dort die <b>Rettung</b> oder die Pause je Gerät nutzen – dann bleiben alle anderen geschützt.</p></div>
+  <p>Mit dem Halbmond-Knopf daneben wechselt die Oberfläche zwischen dunklem und hellem Design. Auf dem Handy liegt die Navigation unten.</p>
+  <div class="zwei">
+    <figure><img src="bilder/05-pause.jpg" alt="Pause"><figcaption>Pause-Auswahl</figcaption></figure>
+    <figure><img src="bilder/17-handy.jpg" alt="Handyansicht" style="max-height:110mm"><figcaption>Ansicht auf dem Handy</figcaption></figure>
+  </div>
+</section>
+
+<!-- ─────────────────────────── 6 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">6</span>Geräte und Rettung</h2>
+  <figure><img src="bilder/06-geraete.jpg" alt="Geräte" style="max-height:62mm"><figcaption>Gerätekarte mit Symbol, Zahlen und Verlauf der letzten 12 Stunden</figcaption></figure>
+  <p>Jedes Gerät, das FAH-Adblock nutzt, bekommt eine Karte. Name und <b>Gerätesymbol</b> liefert UniFi – auch für Geräte, die gerade offline sind. Die Symbole lädt FAH-Adblock einmal von Ubiquiti und speichert sie auf dem NAS; gibt es keins, erscheint ein passendes Emoji. Hat ein Gerät dort keinen Namen, steht der Hersteller da („Gerät von …“) oder „Gerät mit privater MAC“ (zufällige MAC-Adresse von Handys oder virtuelle Maschinen); mit ✎ lässt sich ein eigener Name vergeben. Geräte, die mit einem Profil eingetragen sind, aber noch nicht gefragt haben, erscheinen mit „nie“. Profile hängen an der MAC-Adresse und bleiben erhalten, wenn ein Gerät eine neue IP bekommt.</p>
+  <table>
+    <tr><th>Element</th><th>Was es macht</th></tr>
+    <tr><td>Zahlen</td><td>Anfragen, geblockte Anfragen und Anteil der letzten 24 h; die Kurve zeigt die letzten 12 h.</td></tr>
+    <tr><td>Grüner Punkt</td><td>Gerät war in den letzten 10 Minuten aktiv.</td></tr>
+    <tr><td>Profil-Auswahl</td><td>Welche Kategorien für dieses Gerät gesperrt sind – wirkt sofort.</td></tr>
+    <tr><td>⏸ 15 min / 1 h</td><td>Nur dieses Gerät ungefiltert, alle anderen bleiben geschützt. „▶ Schutz an“ beendet die Pause.</td></tr>
+    <tr><td>✎ Name</td><td>Eigenen Anzeigenamen vergeben (überschreibt den Namen aus UniFi).</td></tr>
+    <tr><td>📜 Protokoll</td><td>Öffnet das Protokoll, gefiltert auf dieses Gerät.</td></tr>
+    <tr><td>🛟 Rettung</td><td>Zeigt, was bei diesem Gerät zuletzt geblockt wurde – mit Ein-Klick-Freigabe.</td></tr>
+  </table>
+</section>
+
+<section>
+  <h3>Rettung – wenn eine Seite oder App nicht mehr geht</h3>
+  <div class="zwei">
+    <div>
+      <ol class="schritte">
+        <li>Unter <b>Geräte</b> beim betroffenen Gerät auf <b>🛟 Rettung</b> tippen.</li>
+        <li>Die Liste zeigt die zuletzt geblockten Domains dieses Geräts (Zeitraum wählbar: 15 min, 1 h, 4 h) – jeweils mit Beschreibung, wie oft und von welcher Liste.</li>
+        <li>Die verdächtige Domain freigeben:
+          <ul>
+            <li><b>Freigeben · 1 h</b> – nur dieses Gerät, eine Stunde lang. Ideal zum Ausprobieren.</li>
+            <li><b>Dauerhaft für …</b> – nur dieses Gerät, ohne Ablauf.</li>
+            <li><b>Für alle</b> – alle Geräte, dauerhaft.</li>
+          </ul></li>
+        <li>Seite bzw. App neu laden. Geblockte Antworten gelten nur 10 Sekunden, die Freigabe greift also praktisch sofort.</li>
+      </ol>
+      <p>Alternativ <b>⏸ Gerät 15 min pausieren</b>: Geht es dann, liegt es am Blocker, und die Rettungsliste zeigt den Übeltäter.</p>
+      <div class="kasten tipp"><span class="titel">Welche Domain ist schuld?</span><p>Die Beschreibung hilft: Domains mit ⚠-Hinweis („Sperre kann … stören“) sind die ersten Kandidaten. Reine Werbe- und Statistikdienste sind selten die Ursache.</p></div>
+      <p>Alle Freigaben aus der Rettung landen unter <b>Listen &amp; Regeln → Eigene Regeln</b> und lassen sich dort wieder entfernen.</p>
+    </div>
+    <figure><img src="bilder/07-rettung.jpg" alt="Rettung"><figcaption>Rettung: zuletzt geblockt, mit Beschreibung und Freigabe</figcaption></figure>
+  </div>
+</section>
+
+<!-- ─────────────────────────── 7 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">7</span>Protokoll</h2>
+  <figure><img src="bilder/08-protokoll.jpg" alt="Protokoll" style="max-height:56mm"><figcaption>Protokoll mit Beschreibung jeder Domain</figcaption></figure>
+  <p>Das Protokoll listet jede DNS-Anfrage: Uhrzeit, Gerät, Domain mit Beschreibung, Typ, Ergebnis mit Grund und Antwortzeit in Millisekunden.</p>
+  <table>
+    <tr><th>Bedienelement</th><th>Was es macht</th></tr>
+    <tr><td>Gerät</td><td>Nur Anfragen eines Geräts zeigen.</td></tr>
+    <tr><td>Domain enthält</td><td>Suche nach einem Teil des Namens, z. B. <code>google</code>.</td></tr>
+    <tr><td>nur geblockt</td><td>Blendet erlaubte Anfragen aus.</td></tr>
+    <tr><td>Live</td><td>Neue Anfragen erscheinen sofort oben. Zum Lesen ausschalten.</td></tr>
+    <tr><td>Freigeben / Sperren</td><td>Direkt aus der Zeile eine Freigabe (Auswahl wie in der Rettung) oder eine Sperre für das Gerät oder alle Geräte anlegen.</td></tr>
+    <tr><td>Ältere laden</td><td>Blättert weiter zurück (so weit, wie das Protokoll aufbewahrt wird).</td></tr>
+  </table>
+  <h3>Was die Ergebnisse bedeuten</h3>
+  <table>
+    <tr><th>Ergebnis</th><th>Bedeutung</th></tr>
+    <tr><td><span class="chip r">geblockt · Listenname</span></td><td>Auf dieser Blockliste, Kategorie im Profil gesperrt.</td></tr>
+    <tr><td><span class="chip r">geblockt · Eigene Regel</span></td><td>Durch eine selbst angelegte Sperrregel.</td></tr>
+    <tr><td><span class="chip r">geblockt · getarnter Tracker</span></td><td>Die Domain leitet per CNAME auf einen gesperrten Tracker weiter.</td></tr>
+    <tr><td><span class="chip g">erlaubt</span> <span class="chip g">· Speicher</span></td><td>Beim verschlüsselten Anbieter nachgefragt bzw. aus dem Zwischenspeicher beantwortet.</td></tr>
+    <tr><td><span class="chip g">· eigene Freigabe</span> <span class="chip g">· Freigabeliste</span> <span class="chip g">· Pause</span></td><td>Durch eine eigene Regel „erlauben“ (auch aus der Rettung), eine Freigabeliste bzw. während einer Pause erlaubt.</td></tr>
+    <tr><td><span class="chip">lokal (Gateway)</span> <span class="chip y">Fehler</span> <span class="chip y">gebremst</span></td><td>Lokale Zone beim Gateway nachgefragt · Anbieter nicht erreichbar · Gerät stellt ungewöhnlich viele Anfragen (über 100 pro Sekunde).</td></tr>
+  </table>
+</section>
+
+<!-- ─────────────────────────── 8 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">8</span>Listen &amp; Regeln</h2>
+  <h3>Domain prüfen</h3>
+  <figure><img src="bilder/09-domain-pruefen.jpg" alt="Domain prüfen"><figcaption>Domain prüfen: Entscheidung, Grund, Profil und beteiligte Listen</figcaption></figure>
+  <p>Domain eintragen, optional ein Gerät wählen, <b>Prüfen</b>. FAH-Adblock sagt, ob die Domain für dieses Gerät geblockt würde, warum, welches Profil gilt und auf welchen Listen sie steht. Ideal, bevor man etwas freigibt oder sperrt.</p>
+
+  <h3>Blocklisten</h3>
+  <figure class="klein"><img src="bilder/10-blocklisten.jpg" alt="Blocklisten"><figcaption>Blocklisten mit Kategorie und Stand</figcaption></figure>
+  <p>Sammlungen bekannter Werbe-, Tracker- und Schadsoftware-Domains aus dem Internet. Sie werden beim ersten Einschalten geladen und danach alle 24 Stunden erneuert. Ein Eintrag sperrt die Domain samt allen Subdomains.</p>
+  <table>
+    <tr><th>Liste</th><th>Kategorie</th><th>Inhalt</th></tr>
+    <tr><td>HaGeZi Pro</td><td>Werbung &amp; Tracker</td><td>Werbung, Tracker, Telemetrie – umfassend bei wenigen Fehlalarmen</td></tr>
+    <tr><td>StevenBlack Unified</td><td>Werbung &amp; Tracker</td><td>Bewährte Sammelliste aus mehreren Quellen</td></tr>
+    <tr><td>HaGeZi Threat Intelligence</td><td>Schadsoftware &amp; Phishing</td><td>Aktuelle Phishing-, Malware- und Betrugsdomains</td></tr>
+    <tr><td>HaGeZi Social</td><td>Social Media</td><td>Soziale Netzwerke</td></tr>
+    <tr><td>HaGeZi NSFW</td><td>Jugendschutz</td><td>Erwachseneninhalte</td></tr>
+    <tr><td>HaGeZi Gambling</td><td>Glücksspiel</td><td>Online-Casinos, Sportwetten</td></tr>
+  </table>
+  <ul>
+    <li><b>Schalter</b> – Liste ein/aus. Ausgeschaltete Listen wirken nirgends.</li>
+    <li><b>↻ je Liste</b> bzw. <b>↻ Alle aktualisieren</b> – sofort neu laden statt auf den 24-Stunden-Takt zu warten. Liefert eine Quelle plötzlich viel weniger Einträge als bisher, verwirft FAH-Adblock die neue Fassung und behält die alte.</li>
+    <li><b>Eigene Liste (URL)</b> – eigene Sperrliste im Hosts-, AdBlock- oder Domain-Format mit Kategorie hinzufügen.</li>
+  </ul>
+  <div class="kasten info"><span class="titel">Liste an ≠ Sperre für alle</span><p>Ob eine Liste auf einem Gerät tatsächlich blockt, entscheidet das <b>Profil</b> des Geräts. Die Social-Media-Liste ist zum Beispiel eingeschaltet, sperrt aber nur Geräte mit dem Profil „Kinder“ – und dort nur im Zeitfenster.</p></div>
+</section>
+
+<section>
+  <h3>Freigabelisten</h3>
+  <div class="zwei">
+    <figure style="margin-top:0"><img src="bilder/11-freigabelisten.jpg" alt="Freigabelisten"><figcaption>Freigabelisten mit „Alle aktualisieren“</figcaption></figure>
+    <div>
+      <p>Geprüfte Sammlungen von Domains, die Werbelisten fälschlich sperren und dadurch Seiten, Apps oder Links kaputt machen. Sie heben <b>nur Sperren der Kategorie „Werbung &amp; Tracker“</b> auf. Schadsoftware, Jugendschutz, Social Media und Glücksspiel bleiben gesperrt.</p>
+      <table>
+        <tr><th>Liste</th><th>Stand</th></tr>
+        <tr><td>AdGuard DNS-Filter – Ausnahmen</td><td><span class="chip g">an</span></td></tr>
+        <tr><td>anudeepND Whitelist</td><td><span class="chip g">an</span></td></tr>
+        <tr><td>HaGeZi URL-Shortener</td><td><span class="chip g">an</span></td></tr>
+        <tr><td>HaGeZi Referral</td><td><span class="chip">aus</span></td></tr>
+        <tr><td>anudeepND Referral-Seiten</td><td><span class="chip">aus</span></td></tr>
+        <tr><td>anudeepND Optional</td><td><span class="chip">aus</span></td></tr>
+      </table>
+      <p>Die ausgeschalteten Listen öffnen Affiliate- und Weiterleitungslinks – bequemer, aber mit weniger Tracking-Schutz. Nur bei Bedarf einschalten. <b>↻ Alle aktualisieren</b> lädt alle Freigabelisten sofort neu.</p>
+      <p><b>Eigene Freigabeliste (URL):</b> eine Domain je Zeile oder AdBlock-Ausnahmen <code>@@||domain^</code> – gilt für <b>alle</b> Kategorien.</p>
+      <p><b>Einzelne Domains</b> gibst du nicht hier, sondern unter <b>Eigene Regeln → erlauben</b> frei.</p>
+    </div>
+  </div>
+  <div class="kasten achtung"><span class="titel">Bekannter Kompromiss</span><p>Die AdGuard-Ausnahmen geben einzelne Dienste frei, die Werbelisten sperren würden, z. B. <code>cdn.taboola.com</code>, <code>statcounter.com</code> und <code>core.crazyegg.com</code> – weil deren Sperre nachweislich Seiten stört. Stört das, die Liste ausschalten oder die Domains als eigene Sperrregel eintragen (Sperrregeln haben Vorrang).</p></div>
+</section>
+
+<section>
+  <h3>Eigene Regeln</h3>
+  <figure class="klein"><img src="bilder/12-eigene-regeln.jpg" alt="Eigene Regeln"><figcaption>Eigene Regeln mit Geltungsbereich und Ablauf</figcaption></figure>
+  <p>Persönliche Ausnahmen, die allen Listen vorgehen – <b>alle</b> eigenen Freigaben und Sperren stehen hier an einer Stelle, auch die aus der Rettung.</p>
+  <table>
+    <tr><th>Feld</th><th>Bedeutung</th></tr>
+    <tr><td>Aktion</td><td><b>✅ erlauben</b> schlägt jede Sperre – für „alle Geräte“ auch Jugendschutz, Social Media, Glücksspiel und Schadsoftware. <b>⛔ sperren</b> blockt zusätzlich zu den Listen.</td></tr>
+    <tr><td>Domain</td><td><code>beispiel.de</code> = Domain und alle Subdomains; <code>*.beispiel.de</code> = nur Subdomains.</td></tr>
+    <tr><td>gilt für</td><td><b>alle Geräte</b>, ein <b>Profil</b> (z. B. alle Kindergeräte) oder ein einzelnes <b>Gerät</b>.</td></tr>
+    <tr><td>Dauer</td><td>Ohne Dauer dauerhaft; mit Dauer läuft die Regel von selbst ab.</td></tr>
+    <tr><td>Notiz</td><td>Freitext, damit man später noch weiß, warum.</td></tr>
+  </table>
+  <div class="kasten tipp"><span class="titel">Beispiele</span>
+    <ul>
+      <li><b>TikTok für die Kinder sperren:</b> sperren · <code>tiktok.com</code> · Profil Kinder</li>
+      <li><b>Newsletter-Links reparieren:</b> erlauben · <code>list-manage.com</code> · alle Geräte</li>
+      <li><b>Fernsehen immer frei:</b> erlauben · <code>*.waipu.tv</code> · alle Geräte</li>
+      <li><b>Nur heute Abend ein Spiel freigeben:</b> erlauben · Domain · Gerät · Dauer 3 h</li>
+    </ul></div>
+</section>
+
+<!-- ─────────────────────────── 9 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">9</span>Dienste</h2>
+  <p>Hier stehen <b>280 bekannte Dienste</b> in 18 Rubriken – von waipu.tv und YouTube über Social Media, Messenger, Spiele, Shopping, E-Mail, Schule, Banken und Reisen bis zu Smart Home und den Grundfunktionen der Geräte. Jeder Dienst hat einen von drei Zuständen:</p>
+  <table>
+    <tr><th>Zustand</th><th>Bedeutung</th><th>Vorgabe für</th></tr>
+    <tr><td><span class="chip g">✓ geschützt</span></td><td><b>Keine Blockliste</b> kann den Dienst sperren – auch nicht Werbe-, Social-Media- oder Jugendschutzlisten.</td><td>Fernsehen &amp; Video, Musik &amp; Audio, Schule &amp; Lernen, Finanzen/Behörden/Gesundheit, Smart Home &amp; Geräte, Geräte &amp; System</td></tr>
+    <tr><td><span class="chip">○ nach Listen</span></td><td>Normal: Blocklisten und das Profil des Geräts entscheiden.</td><td>Social Media, Messenger, Spiele, Shopping, Suche &amp; KI, Nachrichten, Cloud &amp; Arbeit, E-Mail, Reisen &amp; Mobilität, Telefon &amp; Internet, Dating, VPN &amp; Umgehung – Ausnahme: <b>Pokémon GO</b> und <b>PokeRaid</b> sind ab Werk geschützt</td></tr>
+    <tr><td><span class="chip r">⛔ gesperrt</span></td><td>Von dir gesperrt – für alle Geräte oder nur für ein Profil.</td><td>–</td></tr>
+  </table>
+  <ol class="schritte">
+    <li>Oben nach einem Dienst oder einer Domain suchen (z. B. <code>tiktok</code>) oder über <b>Anzeigen</b> nur geschützte, nur „nach Listen“ oder nur gesperrte zeigen.</li>
+    <li>Dienst antippen und den Zustand wählen. Bei <b>⛔ sperren</b> zusätzlich: für alle Geräte oder nur für ein Profil.</li>
+  </ol>
+  <p><b>Smart-TV-Grundfunktionen</b> gilt für alle Hersteller – Samsung, LG, Sony, Panasonic, Philips, Hisense, TCL, Roku, Fire TV und Android TV/Google TV. Fährt man mit der Maus über eine Kachel, zeigt der Hinweis alle zugehörigen Adressen und – falls vorhanden – die <b>Ausnahmen</b>: reine Mess- und Werbe-Adressen innerhalb des Dienstes (z. B. <code>acr-*.samsungcloud.tv</code>), für die weiter die Blocklisten entscheiden. Die Rubriken <b>Dating</b> und <b>VPN &amp; Umgehung</b> sind zum Sperren gedacht, etwa im Profil „Kinder“: ein VPN würde sonst den gesamten Filter umgehen.</p>
+  <p><b>Microsoft Teams</b> umfasst alles, was Teams braucht: Chat, Anrufe und Besprechungen samt der Anruf-Infrastruktur (die früheren Skype-Adressen – einen eigenen Dienst „Skype“ gibt es deshalb nicht mehr), Konfiguration, GIFs und den Diagnosekanal der App. Blocklisten führen diesen Diagnosekanal als Telemetrie; ist er gesperrt, rennt die App ununterbrochen dagegen an. Wer zu Hause mit Teams arbeitet, stellt den Dienst auf <b>geschützt</b> – am besten zusammen mit „Microsoft 365“ (Dateien, Aufzeichnungen); „Microsoft-Konto“ ist ab Werk geschützt.</p>
+  <div class="kasten tipp"><span class="titel">Warum Medien geschützt sind</span><p>Blocklisten führen einzelne Adressen von Streamingdiensten (z. B. Nutzungsstatistik von Netflix oder Samsung). Sperrt man sie, meldet der Fernseher „kein Internet“ oder eine App startet nicht. Deshalb sind Fernsehen, Musik und Geräte-Grundfunktionen geschützt – <b>gesperrt wird nur, was du selbst sperrst</b>. Das gilt auch für selbst hinzugefügte Sperrlisten: sogenannte „SmartTV“-Listen sperren z. B. das Samsung-Konto, danach lässt sich der Fernseher nicht mehr per Handy (SmartThings) bedienen – der Dienst „Samsung-Konto &amp; SmartThings“ verhindert das. Reine Mess-Adressen innerhalb geschützter Domains (z. B. <code>acr-eu-prd.samsungcloud.tv</code>, die Sehverhaltens-Erkennung) bleiben trotzdem geblockt; sie stehen im Hinweistext des Dienstes und haben mit „Samsung Cloud“ nichts zu tun.</p></div>
+  <figure><img src="bilder/13a-dienste.jpg" alt="Dienste" style="max-height:88mm"><figcaption>Dienste-Ansicht mit Rubriken, Suche und Zustand je Dienst</figcaption></figure>
+  <p>Eigene Sperrregeln (Kapitel 8) gehen dem Schutz immer vor. Im Protokoll steht „erlaubt · geschützt (Dienst)“ bzw. „geblockt · Dienst gesperrt“.</p>
+</section>
+
+<!-- ─────────────────────────── 10 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">10</span>Profile und Zeitfenster</h2>
+  <figure><img src="bilder/13-profile.jpg" alt="Profile" style="max-height:64mm"><figcaption>Profile Standard, Kinder und Unbeschränkt mit Zuordnung der Geräte</figcaption></figure>
+  <p>Ein Profil legt fest, welche <b>Kategorien</b> (Werbung &amp; Tracker, Schadsoftware &amp; Phishing, Social Media, Jugendschutz, Glücksspiel) für die zugeordneten Geräte gesperrt sind. <b>Schalter an</b> = Kategorie gesperrt. Eigene Freigaben gelten unabhängig vom Profil.</p>
+  <table>
+    <tr><th>Profil</th><th>Voreinstellung</th></tr>
+    <tr><td>Standard</td><td>Werbung &amp; Tracker sowie Schadsoftware gesperrt. Jedes neue Gerät bekommt automatisch dieses Profil.</td></tr>
+    <tr><td>Kinder</td><td>Zusätzlich Jugendschutz und Glücksspiel immer, Social Media täglich 20:00–07:00. Zugeordnet: Nintendo Switch, Gast Smartphone NEU und ALT, Gast-tab, papa-Lenovo und drei weitere Geräte aus dem früheren UniFi-Filter „Kinder“.</td></tr>
+    <tr><td>Unbeschränkt</td><td>Nur Schadsoftware &amp; Phishing gesperrt – z. B. für ein Arbeitsgerät, das keine Filterung verträgt.</td></tr>
+  </table>
+  <h3>Zeitfenster</h3>
+  <ol class="schritte">
+    <li>Bei einer eingeschalteten Kategorie <b>+ Zeitfenster</b> anklicken.</li>
+    <li>Wochentage antippen (grün = aktiv) und Beginn und Ende wählen.</li>
+    <li>Die Leiste darunter zeigt die gesperrten Zeiten der Woche. Mehrere Fenster sind möglich; ✕ entfernt eines.</li>
+    <li><b>Speichern</b> – die Änderung wirkt sofort.</li>
+  </ol>
+  <p>Ohne Zeitfenster gilt die Sperre immer. Ein Fenster über Mitternacht (z. B. 20:00–07:00) gehört zum Starttag: „Mo 20:00–07:00“ sperrt von Montagabend bis Dienstagmorgen.</p>
+  <h3>Einzelne Dienste je Profil</h3>
+  <div class="zwei">
+    <figure style="margin-top:0"><img src="bilder/14a-profildienste.jpg" alt="Dienste im Profil" style="max-height:105mm"><figcaption>Ausnahmen je Profil – Standard, erlaubt oder gesperrt</figcaption></figure>
+    <div>
+      <p>Unter den Kategorien jedes Profils steht <b>Einzelne Dienste in diesem Profil</b>. Damit legst du für genau dieses Profil fest, was gilt – unabhängig von den Kategorien und vom allgemeinen Zustand unter <i>Dienste</i>.</p>
+      <p>Antippen wechselt zwischen <b>Standard</b> (wie unter Dienste eingestellt), <b>erlaubt</b> und <b>gesperrt</b>. Je Rubrik gibt es <b>alle sperren</b> und <b>zurücksetzen</b>. Die Änderung wirkt nach <b>Speichern</b>.</p>
+      <div class="kasten tipp"><span class="titel">Beispiel Kinder</span><p>Kategorie <b>Social Media</b> abends gesperrt, aber <b>WhatsApp erlaubt</b> (Kontakt zu den Eltern) und <b>TikTok immer gesperrt</b> – unabhängig von der Uhrzeit.</p></div>
+    </div>
+  </div>
+
+  <p><b>Profile verwalten:</b> Name und Farbe direkt im Kopf der Profilkarte ändern · <b>+ Profil</b> legt ein neues an, ✕ löscht es (Geräte fallen auf „Standard“ zurück; „Standard“ bleibt immer) · <b>Geräte zuordnen</b> (unten) wirkt sofort ohne Speichern – ebenso die Auswahl auf der Gerätekarte.</p>
+</section>
+
+<!-- ─────────────────────────── 10 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">11</span>Statistik</h2>
+  <figure><img src="bilder/15-statistik.jpg" alt="Statistik"><figcaption>Verlauf, Toplisten mit Beschreibung und aktivste Geräte</figcaption></figure>
+  <ul>
+    <li><b>Diagramm</b> – Anfragen über die Zeit, grau erlaubt, rot geblockt. Umschalter <b>24 h</b> (je Stunde) oder <b>7 Tage</b> (je Tag). Darunter die Summe und der geblockte Anteil.</li>
+    <li><b>Meistgeblockt / Meistaufgerufen</b> – die häufigsten Domains der letzten 24 Stunden, jeweils mit Beschreibung. Hier fällt schnell auf, welches Gerät oder welche App ständig „nach Hause telefoniert“.</li>
+    <li><b>Aktivste Geräte</b> – Anfragen je Gerät mit geblocktem Anteil.</li>
+  </ul>
+  <p>Die Stundensummen bleiben 35 Tage erhalten, auch wenn einzelne Anfragen im Protokoll schon gelöscht sind.</p>
+</section>
+
+<!-- ─────────────────────────── 11 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">12</span>Einstellungen</h2>
+  <h3>🔐 Verschlüsseltes DNS nach außen</h3>
+  <figure><img src="bilder/16-einstellungen-1.jpg" alt="Verschlüsseltes DNS" style="max-height:92mm"></figure>
+      <p>Wohin FAH-Adblock erlaubte Anfragen weiterschickt. Die Verbindung ist per DNS-over-HTTPS verschlüsselt – weder der Internetanbieter noch jemand dazwischen sieht, welche Seiten aufgerufen werden.</p>
+      <figure style="margin:0 0 4mm"><img src="bilder/16a-anbieter.jpg" alt="Anbieterkatalog" style="max-height:120mm"><figcaption>Katalog kostenloser DNS-Anbieter zum Ankreuzen</figcaption></figure>
+      <table>
+        <tr><th>Einstellung</th><th>Was sie macht</th></tr>
+        <tr><td>Anbieterliste</td><td>Name und DoH-Adresse. <b>Reihenfolge = Vorrang</b>: Antwortet der erste nicht, übernimmt der nächste. Voreingestellt: Quad9 (prüft zusätzlich gegen Schadsoftware), Rückfall Cloudflare und DNS.SB – bewusst nur Anbieter ohne eigene Werbesperre, denn FAH-Adblock filtert selbst. Neben jedem Anbieter stehen Antwortzeit und Fehlerzahl. Anbieter mit eigener Werbe- oder Trackersperre (DNSforge, Mullvad AdBlock, AdGuard …) sperren zusätzlich nach ihren eigenen Listen; für <b>geschützte Dienste</b> und <b>eigene Freigaben</b> gilt das nicht – sperrt ein Anbieter dort, fragt FAH-Adblock automatisch den nächsten.</td></tr>
+        <tr><td>Kostenlose Anbieter auswählen</td><td>Katalog mit 21 öffentlichen DoH-Anbietern (Quad9, Cloudflare, Google, Mullvad, AdGuard, DNSforge, DNS.SB …), gruppiert nach Schadsoftware-Schutz, Werbesperre, Jugendschutz und ungefiltert – mit Land und kurzer Beschreibung. Haken setzen nimmt den Anbieter in die Liste auf.</td></tr>
+        <tr><td>▲ / ▼</td><td>Rangfolge ändern: Der erste Anbieter wird gefragt, die anderen sind Rückfall.</td></tr>
+        <tr><td>+ Eigener Anbieter</td><td>Eigenen DoH-Anbieter ergänzen (Adresse beginnt mit <code>https://</code>).</td></tr>
+        <tr><td>Zwischenspeicher leeren</td><td>Vergisst alle gemerkten Antworten. Nur nötig, wenn eine Seite nach einer Umstellung beim Anbieter noch falsch auflöst.</td></tr>
+      </table>
+      <p>Fällt ein Anbieter dreimal hintereinander aus, setzt FAH-Adblock ihn 30 Sekunden aus und probiert es dann erneut.</p>
+    </section>
+
+<section>
+  <h3>🌐 Netz</h3>
+  <figure><img src="bilder/16-einstellungen-2.jpg" alt="Netz" style="max-height:150mm"><figcaption>Beispiel aus einer Testinstallation (Adresse 127.0.0.1)</figcaption></figure>      <table>
+        <tr><th>Einstellung</th><th>Was sie macht</th></tr>
+        <tr><td>DNS-Adresse</td><td>Die Adresse, die Geräte als DNS-Server nutzen – auf dem NAS <code>192.168.1.23:53</code>. Nur anzeigbar; festgelegt in der <code>.env</code> (<code>DNS_BIND</code>).</td></tr>
+        <tr><td>Erlaubte Netze</td><td>Nur Geräte aus diesen IP-Bereichen dürfen fragen, alle anderen bekommen eine Absage. So wird FAH-Adblock nicht als offener DNS-Server missbraucht. Standard: <code>192.168.1.0/24</code> (Homelab), <code>192.168.5.0/24</code> (VPN), <code>127.0.0.1/32</code> (NAS). Ein weiteres Netz (z. B. IoT) hier eintragen, wenn es mitgefiltert werden soll.</td></tr>
+        <tr><td>Gateway</td><td>Das UniFi-Gateway (<code>192.168.1.1</code>). Es kennt die Gerätenamen und lokalen Einträge; Anfragen zu lokalen Zonen gehen dorthin.</td></tr>
+        <tr><td>Lokale Zonen</td><td>Domain-Endungen, die <b>nicht im Internet</b>, sondern beim Gateway nachgefragt und <b>nie gefiltert</b> werden: Gerätenamen (<code>.localdomain</code>, <code>.lan</code>, <code>.local</code>), die Rückwärtsauflösung von IP-Adressen (<code>…in-addr.arpa</code>) und <code>example.org</code>, das im Heimnetz direkt auf das NAS zeigt.</td></tr>
+        <tr><td>Protokoll aufbewahren</td><td>Wie viele Tage jede einzelne Anfrage im Protokoll und in der Rettung bleibt (1–90, Standard 7). Mehr Tage = größere Datenbank; die Größe steht dabei. Bestimmt auch, wie weit die Liste „Meistgeblockt“ zurückreicht.</td></tr>
+        <tr><td>Vertraute Proxys</td><td>Adressen oder Netze, aus denen ein <b>Reverse-Proxy</b> den Blocker anspricht (hier: der Nginx Proxy Manager im Docker-Netz <code>192.168.48.0/20</code>). Für Anfragen von dort zählt die Anmeldebremse die <b>echte</b> Absenderadresse aus dem Header <code>X-Forwarded-For</code> – sonst teilen sich alle Zugriffe aus dem Internet die Adresse des Proxys, und zehn Fehlversuche eines Bots sperren jede Anmeldung über die Domain für 15 Minuten. Der Erklärtext zeigt live „Diese Anfrage kam von …“: die Oberfläche über die Domain aufrufen und die gezeigte Adresse (bzw. ihr Netz) eintragen. Leer = wie bisher.</td></tr>
+        <tr><td>Sperrseite anzeigen</td><td>Gesperrte Seiten zeigen statt einer Browser-Fehlermeldung den Hinweis „Diese Seite ist gesperrt“ mit Domain und Grund. Werbung und Tracker bleiben stumm geblockt. Der Schalter wirkt sofort und gilt auch für die Ersatz-Instanz; am <b>FAH-Proxy</b> muss die Sperrseite ebenfalls eingeschaltet sein. Damit der Browser nicht warnt, einmal je Gerät über <b>Zertifikat für Geräte laden</b> das Zertifikat installieren und ihm vertrauen. Geräte im IoT-Netz sehen die Seite nicht.</td></tr>
+      </table>
+      <p>Änderungen mit <b>Speichern</b> übernehmen – sie wirken sofort, ohne Neustart.</p>
+</section>
+
+<section>
+  <h3>📡 UniFi (Gerätenamen)</h3>
+  <figure><img src="bilder/16-einstellungen-3.jpg" alt="UniFi" style="max-height:92mm"></figure>
+      <p>Nur lesend: FAH-Adblock holt alle 5 Minuten die Clientliste von UniFi. Dadurch stehen statt IP-Adressen Gerätenamen und -symbole in der Oberfläche, und Profile hängen an der MAC-Adresse. Taucht ein neues Gerät auf, fragt FAH-Adblock UniFi sofort nach – so bekommt es von der ersten Anfrage an sein Profil. <b>An UniFi wird nichts verändert.</b></p>
+      <table>
+        <tr><th>Einstellung</th><th>Was sie macht</th></tr>
+        <tr><td>Adresse</td><td>Adresse des UniFi-Gateways, z. B. <code>https://192.168.1.1</code>.</td></tr>
+        <tr><td>API-Schlüssel</td><td>In UniFi unter <span class="pfad">Einstellungen <i>›</i> Control Plane <i>›</i> Integrationen</span> erzeugen und hier einfügen. Er wird verschlüsselt gespeichert und nie wieder angezeigt; „gesetzt“ zeigt, dass einer hinterlegt ist. Feld leer lassen = unverändert.</td></tr>
+        <tr><td>Verbindung testen</td><td>Liest die Clientliste einmal und meldet, wie viele Geräte gerade online sind.</td></tr>
+      </table>
+      <p>Ohne UniFi-Zugang funktioniert alles genauso – nur mit Rechnernamen oder IP-Adressen statt der UniFi-Namen.</p>
+    
+  <h3>👤 Konto &amp; Sicherung</h3>
+  <figure><img src="bilder/16-einstellungen-4.jpg" alt="Konto" style="max-height:92mm"></figure>
+      <table>
+        <tr><th>Einstellung</th><th>Was sie macht</th></tr>
+        <tr><td>Passwort ändern</td><td>Bisheriges und neues Passwort (mindestens 8 Zeichen). Name bleibt <code>admin</code>. <b>Alle anderen Sitzungen</b> (Handy, zweiter Browser) werden dabei abgemeldet; die aktuelle läuft weiter.</td></tr>
+        <tr><td>⬇ Sicherung</td><td>Speichert Einstellungen, Listen, Profile, Geräte und Regeln als Datei – <b>ohne</b> Passwort und UniFi-Schlüssel.</td></tr>
+        <tr><td>⬆ Wiederherstellen</td><td>Spielt eine solche Datei wieder ein, z. B. nach einer Neuinstallation.</td></tr>
+        <tr><td>Abmelden</td><td>Beendet <b>alle</b> Sitzungen dieses Nutzers – auch auf anderen Geräten. Ein abhandengekommenes Anmelde-Cookie ist danach wertlos.</td></tr>
+      </table>
+      <div class="kasten info"><span class="titel">Anmeldebremse</span><p>Je Absenderadresse sind 10 Fehlversuche in 15 Minuten erlaubt. Zusätzlich gilt je Nutzername, egal von wo: ab dem dritten Fehlversuch eine Wartezeit von 2 Sekunden, die sich bei jedem weiteren verdoppelt (bis 15 Minuten) – die Meldung nennt die Restwartezeit. Ein Bot, der dauernd „admin“ probiert, kann die Anmeldung so kurz blockieren; das ist Absicht. Hinter dem Proxy braucht es dafür die Einstellung „Vertraute Proxys“.</p></div>
+      <table style="display:none">
+      </table>
+      <p>Unten stehen die Version und Zähler seit dem Start (Anfragen, abgewiesen, Fehler).</p>
+    
+  <div class="kasten wichtig"><span class="titel">Passwort vergessen?</span><p>Auf dem NAS im Ordner <code>/volume3/docker/fah-adblock/data</code> die Datei mit den Zugangsdaten (<code>nutzer.json</code>) entfernen und <code>./manage.sh restart</code> ausführen. Danach gilt wieder <code>admin</code> / <code>admin</code> – sofort ändern.</p></div>
+</section>
+
+<!-- ─────────────────────────── 12 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">13</span>Betrieb auf dem NAS</h2>
+  <p>FAH-Adblock läuft als ein Docker-Container im Host-Netz des NAS unter <code>/volume3/docker/fah-adblock</code>. Alle Befehle dort per SSH ausführen.</p>
+  <table>
+    <tr><th>Befehl</th><th>Was er macht</th></tr>
+    <tr><td><code>./manage.sh update</code></td><td>Update aus <code>fah-adblock_release.zip</code> im selben Ordner (bei mehreren Downloads gewinnt die höchste „(N)“). Baut neu, startet und wartet, bis DNS und Oberfläche antworten.</td></tr>
+    <tr><td><code>./manage.sh update --no-cache</code></td><td>Wie oben, mit komplettem Neubau des Containers.</td></tr>
+    <tr><td><code>./manage.sh status</code></td><td>Zeigt, ob der Container läuft und gesund ist.</td></tr>
+    <tr><td><code>./manage.sh logs</code></td><td>Laufende Meldungen (Beenden mit Strg+C).</td></tr>
+    <tr><td><code>./manage.sh start | stop | restart</code></td><td>Starten, stoppen, neu starten.</td></tr>
+    <tr><td><code>./manage.sh url</code></td><td>Zeigt die Adressen von Oberfläche und DNS.</td></tr>
+    <tr><td><code>./manage.sh port [PORT]</code></td><td>Port der Oberfläche anzeigen oder ändern.</td></tr>
+    <tr><td><code>./manage.sh test</code></td><td>DNS-Probe gegen den laufenden Dienst (11 Prüfungen: Werbung geblockt, erlaubt, lokale Zone, TCP, Firefox-Prüf-Domain …).</td></tr>
+  </table>
+  <h3>Was ein Update anfasst – und was nicht</h3>
+  <table>
+    <tr><th>Teil</th><th>Beim Update</th></tr>
+    <tr><td>Programm (src, public, tools, Dockerfile)</td><td>wird ersetzt</td></tr>
+    <tr><td><code>.env</code>, <code>docker-compose.yml</code></td><td>bleiben unverändert (nur bei der Erstinstallation aus den Vorlagen angelegt)</td></tr>
+    <tr><td><code>data/</code> (Einstellungen, Listen, Protokoll, Zugang)</td><td>wird nie angefasst</td></tr>
+    <tr><td>Port der Oberfläche</td><td>bei der Erstinstallation automatisch ein freier Port (Portautomatik), danach fest</td></tr>
+    <tr><td>DNS-Port 53</td><td>fest – ist er durch einen anderen Dienst belegt, bricht der Start mit Hinweis ab</td></tr>
+  </table>
+  <p>Während eines Updates ist FAH-Adblock etwa zehn Sekunden nicht erreichbar. Homelab und IoT haben in dieser Zeit keine Namensauflösung (sie kennen nur diesen einen DNS-Server); Browser und Apps überbrücken das aus ihrem Zwischenspeicher. VPN-Clients weichen auf ihren zweiten Eintrag aus.</p>
+  <div class="kasten info"><span class="titel">Nach dem Update auf v21 (17.09.)</span><p>Mit v21 wurde das Anmelde-Cookie um einen Sitzungszähler ergänzt – alle bis dahin angemeldeten Browser mussten sich einmal neu anmelden. Seither passiert das nur noch beim Abmelden oder Passwortwechsel.</p></div>
+  <h3>Die .env</h3>
+<pre>DNS_BIND=192.168.1.23          # NAS-Adresse, auf der DNS lauscht (UDP/TCP 53)
+DNS_PORT=53
+WEB_PORT=8053                # Oberfläche (Portautomatik bei Erstinstallation)
+GATEWAY=192.168.1.1            # für lokale Namen
+ERLAUBTE_NETZE=192.168.1.0/24,192.168.5.0/24,127.0.0.1/32
+VERTRAUTE_PROXIES=          # Startwert für „Vertraute Proxys“ (nur Erstinstallation), z. B. 192.168.48.0/20
+TZ=Europe/Berlin
+SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
+  <p>Werte aus der <code>.env</code> gelten als Startwerte; Erlaubte Netze und Gateway lassen sich danach in der Oberfläche ändern.</p>
+  <h3>Sicherung</h3>
+  <p>Für eine vollständige Sicherung genügt der Ordner <code>data/</code> zusammen mit <code>.env</code> und <code>docker-compose.yml</code>. Die Sicherung aus der Oberfläche (Kapitel 12) enthält alle Einstellungen, aber bewusst kein Passwort und keinen UniFi-Schlüssel.</p>
+</section>
+
+<!-- ─────────────────────────── 13 ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">14</span>Fehlerbehebung</h2>
+  <table>
+    <tr><th>Problem</th><th>Vorgehen</th></tr>
+    <tr><td>Teams-Anrufe kommen nicht zustande oder brechen ab</td><td>Unter Dienste → Messenger &amp; Konferenzen „Microsoft Teams“ und unter Cloud &amp; Arbeit „Microsoft 365“ auf <b>geschützt</b> stellen. Im Protokoll nach dem Gerät filtern: steht dort weiter „geblockt“ bei einer Microsoft-Adresse, die Adresse melden. Steht ein filternder DNS-Anbieter (z. B. DNSforge) in der Anbieterliste, sperrte dieser früher unbemerkt Teile der Anruf-Konfiguration – seit Version 2026.09.21-29 werden geschützte Dienste an ihm vorbei aufgelöst. Bleibt das Protokoll sauber, liegt es nicht am Filter (dann Firewall, VPN oder WLAN prüfen – Anrufe laufen über UDP 3478–3481).</td></tr>
+    <tr><td>Fernseher lässt sich nicht mehr per Handy (SmartThings) bedienen</td><td>Unter Dienste → Geräte &amp; System prüfen, dass „Samsung-Konto &amp; SmartThings“ und „Smart-TV-Grundfunktionen“ <b>geschützt</b> sind. Danach die SmartThings-App einmal ganz schließen und neu öffnen, notfalls den Fernseher kurz vom Strom nehmen.</td></tr>
+    <tr><td>Fernseher meldet „kein Internet“, Apps starten nicht</td><td>Unter Listen &amp; Regeln → Streaming &amp; Medien prüfen, dass „Smart-TV-Grundfunktionen“ und der Dienst (z. B. waipu.tv) <b>geschützt</b> sind. Dann Netzwerkstatus am TV erneut prüfen.</td></tr>
+    <tr><td>Seite, App oder Link geht nicht</td><td>Geräte → 🛟 Rettung → verdächtige Domain „Freigeben · 1 h“ → neu laden. Hilft das nicht: „Gerät 15 min pausieren“. Geht es dann immer noch nicht, liegt es nicht am Blocker.</td></tr>
+    <tr><td>Link aus Mail/Newsletter geht nicht</td><td>Meist ein Klick-Tracker (z. B. <code>list-manage.com</code>, <code>sendgrid.net</code>). In der Rettung freigeben oder die Freigabeliste „HaGeZi Referral“ einschalten.</td></tr>
+    <tr><td>Werbung wird trotzdem angezeigt</td><td>Kommt sie von derselben Domain wie der Inhalt (YouTube, Instagram), kann DNS sie nicht trennen. Sonst: Gerät unter „Geräte“? Sicheres DNS/Privat-Relay (Kapitel 4)? „Domain prüfen“ nutzen.</td></tr>
+    <tr><td>Gerät nicht in der Liste</td><td>Kapitel 4: Lease erneuern, manuellen DNS entfernen.</td></tr>
+    <tr><td>Gerät hat seit der Firewall-Regel kein Internet</td><td>Es nutzt nur fest eingetragene DNS-Server (selten). Am Gerät DNS auf automatisch bzw. <code>192.168.1.23</code> stellen.</td></tr>
+    <tr><td>Kindergerät nicht gefiltert</td><td>Profil unter Geräte prüfen. Taucht es nicht auf oder kaum: Es fragt das Gateway (DNS 2) – neu verbinden; dauerhaft hilft Kapitel 3, Schritt 7.</td></tr>
+    <tr><td>Gerätenamen fehlen</td><td>Einstellungen → UniFi → Verbindung testen. Schlüssel ggf. neu erzeugen.</td></tr>
+    <tr><td>Oberfläche nicht erreichbar</td><td>Aus dem Heimnetz oder mit VPN? Auf dem NAS <code>./manage.sh status</code> und <code>./manage.sh logs</code>.</td></tr>
+    <tr><td>Kein Internet im ganzen Netz</td><td>Sollte dank DNS 2 nicht passieren. In UniFi beide DNS-Server prüfen; notfalls Rückbau (Kapitel 4).</td></tr>
+    <tr><td>Anbieter meldet Fehler</td><td>Einstellungen → Verschlüsseltes DNS zeigt Antwortzeit und Fehler; FAH-Adblock weicht selbst aus.</td></tr>
+    <tr><td>Blockliste mit Fehler</td><td>Fehler steht an der Liste, die alte Fassung bleibt aktiv; „↻“ versucht es erneut.</td></tr>
+    <tr><td>Seite nach Freigabe noch weg</td><td>Tab schließen und neu öffnen – spätestens nach einer Minute ist die alte Antwort vergessen. Nach einem Update lädt sich die Oberfläche von selbst neu.</td></tr>
+  </table>
+</section>
+
+<!-- ─────────────────────────── 14 ─────────────────────────── -->
+<section class="kapitel" id="anhang">
+  <h2><span class="nr">15</span>Anhang</h2>
+  <h3>Entscheidungsreihenfolge je Anfrage</h3>
+  <ol class="schritte">
+    <li><b>Absender prüfen</b> – nicht aus einem erlaubten Netz → Absage (REFUSED).</li>
+    <li><b>Bremse</b> – mehr als 100 Anfragen pro Sekunde von einem Gerät (kurzzeitig bis 300) → gebremst.</li>
+    <li><b>Firefox-Prüf-Domain</b> <code>use-application-dns.net</code> → „gibt es nicht“, damit Firefox kein eigenes DNS nutzt.</li>
+    <li><b>Lokale Zone</b> → ans Gateway, ungefiltert.</li>
+    <li><b>Pause</b> (alle oder dieses Gerät) → erlaubt.</li>
+    <li><b>Eigene Freigabe</b> (Regel „erlauben“ für alle, ein Profil oder ein Gerät) → erlaubt.</li>
+    <li><b>Eigene Sperrregel</b> → geblockt.</li>
+    <li><b>Dienst</b> (Kapitel 9): Ausnahme im Profil geht vor, sonst der Zustand des Dienstes – <i>gesperrt</i> → geblockt, <i>geschützt</i> → erlaubt, <i>nach Listen</i> → weiter zu Punkt 9.</li>
+    <li><b>Blocklisten</b>: nur Listen, deren Kategorie im Profil des Geräts <i>gerade</i> gesperrt ist.
+      <ul><li>Steht die Domain auf einer <b>selbst hinzugefügten Freigabeliste</b> → erlaubt.</li>
+      <li>Nur Werbe-Sperren und Domain auf einer <b>Freigabeliste aus dem Internet</b> → erlaubt.</li>
+      <li>Sonst → geblockt.</li></ul></li>
+    <li><b>Verschlüsselt nachfragen</b> (bzw. aus dem Zwischenspeicher).</li>
+    <li><b>Getarnte Tracker</b>: Zeigt die Antwort per CNAME auf eine gesperrte Domain → geblockt (nicht bei Pause oder Freigaben).</li>
+  </ol>
+  <p>Geblockte Antworten: <code>A → 0.0.0.0</code>, <code>AAAA → ::</code>, andere Typen leer. Sie gelten nur 10 Sekunden, damit Freigaben sofort wirken.</p>
+
+  <h3>Ports und Adressen</h3>
+  <table>
+    <tr><th>Dienst</th><th>Adresse</th><th>Zugriff</th></tr>
+    <tr><td>DNS</td><td class="mono">192.168.1.23:53 UDP/TCP</td><td>Erlaubte Netze</td></tr>
+    <tr><td>Weboberfläche</td><td class="mono">192.168.1.23:8053 HTTP</td><td>Heimnetz und VPN</td></tr>
+    <tr><td>Nach außen</td><td class="mono">HTTPS 443</td><td>Quad9, Cloudflare, Blocklisten-Quellen</td></tr>
+    <tr><td>UniFi (lesend)</td><td class="mono">https://192.168.1.1</td><td>API-Schlüssel</td></tr>
+    <tr><td>Gerätesymbole</td><td class="mono">https://static.ui.com</td><td>einmal je Symbol, danach aus data/symbole</td></tr>
+  </table>
+
+  <h3>Dateien in data/</h3>
+  <table>
+    <tr><th>Datei</th><th>Inhalt</th></tr>
+    <tr><td>einstellungen.json</td><td>Listen, Profile, Geräte, Regeln, Netz und Anbieter; UniFi-Schlüssel verschlüsselt</td></tr>
+    <tr><td>protokoll.db</td><td>Protokoll und Statistik (SQLite)</td></tr>
+    <tr><td>listen/</td><td>Geladene Block- und Freigabelisten</td></tr>
+    <tr><td>symbole/</td><td>Zwischengespeicherte UniFi-Gerätesymbole</td></tr>
+    <tr><td>nutzer.json, .geheimnis</td><td>Zugang (Passwort nur als Hash) und Sitzungsschlüssel</td></tr>
+  </table>
+
+  <h3>Domain-Beschreibungen</h3>
+  <p>Die Beschreibungen unter den Domains stammen aus einer eigenen, in FAH-Adblock eingebauten Wissensdatenbank mit rund 430 bekannten Diensten (Werbenetzwerke, Tracker, Telemetrie von Microsoft, Apple, Google, Samsung u. v. m.). Für unbekannte Domains wertet FAH-Adblock typische Namensteile aus (z. B. <code>telemetry</code>, <code>logs</code>, <code>ads</code>) und kennzeichnet den Anbieter als unbekannt. Es werden dafür keine Daten ins Internet geschickt – nur der Link „im Web nachschlagen“ öffnet auf Klick eine Suche.</p>
+
+  <h3>Lizenzen</h3>
+  <p>FAH-Adblock nutzt ausschließlich Node.js-Bordmittel und die Bibliothek <code>dns-packet</code> (MIT) samt ihrer einzigen Abhängigkeit (MIT). Blocklisten werden zur Laufzeit aus den jeweiligen Quellen geladen und nicht mitgeliefert.</p>
+</section>
+
+</body>
+</html>

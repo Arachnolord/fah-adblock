@@ -1,0 +1,102 @@
+// ============================================================================
+// Erdacht und programmiert von Fabian Hammer.
+// (c) 2026 Fabian Hammer - Alle Rechte vorbehalten. Geistiges Eigentum.
+// Unbefugte Vervielfaeltigung, Weitergabe oder Verwertung dieses Quellcodes ohne
+// schriftliche Genehmigung des Urhebers ist untersagt.
+// ============================================================================
+// DNS-Antworten auf Byte-Ebene: Upstream-Antworten werden NICHT dekodiert und neu gebaut,
+// sondern unverändert weitergereicht – nur ID und TTLs werden an Ort und Stelle geschrieben.
+// So kommen auch Eintragstypen heil an, die keine Bibliothek vollständig kennt (HTTPS/SVCB,
+// neue DNSSEC-Typen …). Gelesen wird nur, was nötig ist: Kopf, Namen (mit Kompression),
+// Typ/Klasse/TTL/Datenlänge, CNAME-Ziele und SOA-Minimum.
+'use strict';
+
+const TYP_CNAME = 5, TYP_SOA = 6, TYP_OPT = 41;
+
+function leseName(buf, off) {
+  const teile = []; let pos = off, ende = -1, sprung = 0;
+  for (;;) {
+    if (pos >= buf.length) throw new Error('Name über das Paketende');
+    const laenge = buf[pos];
+    if (laenge === 0) { if (ende < 0) ende = pos + 1; break; }
+    if ((laenge & 0xc0) === 0xc0) {
+      if (pos + 1 >= buf.length || ++sprung > 30) throw new Error('Kompressionszeiger ungültig');
+      if (ende < 0) ende = pos + 2;
+      pos = ((laenge & 0x3f) << 8) | buf[pos + 1];
+      continue;
+    }
+    if ((laenge & 0xc0) !== 0) throw new Error('Label-Typ unbekannt');
+    teile.push(buf.toString('latin1', pos + 1, pos + 1 + laenge));
+    pos += 1 + laenge;
+  }
+  return { name: teile.join('.').toLowerCase(), ende };
+}
+function kopf(buf) {
+  if (buf.length < 12) throw new Error('Paket zu kurz');
+  return { id: buf.readUInt16BE(0), flags: buf.readUInt16BE(2), qd: buf.readUInt16BE(4), an: buf.readUInt16BE(6), ns: buf.readUInt16BE(8), ar: buf.readUInt16BE(10) };
+}
+function frageEnde(buf) {
+  const k = kopf(buf); let pos = 12;
+  for (let i = 0; i < k.qd; i++) { pos = leseName(buf, pos).ende + 4; if (pos > buf.length) throw new Error('Frage über das Paketende'); }
+  return pos;
+}
+// Alle Einträge mit Lage im Paket
+function eintraege(buf) {
+  const k = kopf(buf), liste = [];
+  let pos = frageEnde(buf);
+  const abschnitte = [['an', k.an], ['ns', k.ns], ['ar', k.ar]];
+  for (const [abschnitt, anzahl] of abschnitte) {
+    for (let i = 0; i < anzahl; i++) {
+      const start = pos, name = leseName(buf, pos);
+      pos = name.ende;
+      if (pos + 10 > buf.length) throw new Error('Eintrag über das Paketende');
+      const typ = buf.readUInt16BE(pos), klasse = buf.readUInt16BE(pos + 2), ttl = buf.readUInt32BE(pos + 4), laenge = buf.readUInt16BE(pos + 8);
+      const daten = pos + 10;
+      if (daten + laenge > buf.length) throw new Error('Daten über das Paketende');
+      liste.push({ abschnitt, start, name: name.name, typ, klasse, ttl, ttlOffset: pos + 4, daten, laenge, ende: daten + laenge });
+      pos = daten + laenge;
+    }
+  }
+  return liste;
+}
+const rcode = (buf) => (buf.length >= 4 ? buf.readUInt16BE(2) & 15 : -1);
+
+// Kleinste TTL der Antworten; ohne Antworten: SOA-Minimum (negative Antwort)
+function minTtl(buf) {
+  const liste = eintraege(buf).filter((e) => e.typ !== TYP_OPT);
+  const antworten = liste.filter((e) => e.abschnitt === 'an');
+  if (antworten.length) return Math.min(...antworten.map((e) => e.ttl));
+  const soa = liste.find((e) => e.abschnitt === 'ns' && e.typ === TYP_SOA);
+  if (soa) {
+    const rname = leseName(buf, leseName(buf, soa.daten).ende).ende;
+    const minimum = rname + 16 + 4 <= buf.length ? buf.readUInt32BE(rname + 16) : 300;
+    return Math.min(soa.ttl, minimum);
+  }
+  return null;
+}
+function cnameZiele(buf) {
+  return eintraege(buf).filter((e) => e.abschnitt === 'an' && e.typ === TYP_CNAME).map((e) => leseName(buf, e.daten).name);
+}
+
+// Für den Client: Kopie mit dessen ID, TTLs um das Alter verringert, OPT entfernt, wenn der Client kein EDNS
+// sprach (und OPT der letzte Eintrag ist), bei UDP über der Grenze → nur Kopf + Frage mit TC-Bit.
+function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true } = {}) {
+  let buf = Buffer.from(antwort);
+  const liste = eintraege(buf);   // wirft bei kaputten Paketen
+  buf.writeUInt16BE(id, 0);
+  if (alterSek > 0) for (const e of liste) if (e.typ !== TYP_OPT) buf.writeUInt32BE(Math.max(0, e.ttl - alterSek), e.ttlOffset);
+  if (!edns) {
+    const opt = liste.find((e) => e.typ === TYP_OPT);
+    if (opt && opt.ende === buf.length) { buf = buf.subarray(0, opt.start); buf.writeUInt16BE(Math.max(0, buf.readUInt16BE(10) - 1), 10); }
+  }
+  const grenze = edns ? Math.min(Math.max(512, edns.udpGroesse || 512), 1232) : 512;
+  if (udp && buf.length > grenze) {
+    const ende = frageEnde(buf), gekuerzt = Buffer.from(buf.subarray(0, ende));
+    gekuerzt.writeUInt16BE(buf.readUInt16BE(2) | 0x0200, 2);   // TC
+    gekuerzt.writeUInt16BE(0, 6); gekuerzt.writeUInt16BE(0, 8); gekuerzt.writeUInt16BE(0, 10);
+    return gekuerzt;
+  }
+  return buf;
+}
+
+module.exports = { leseName, kopf, eintraege, rcode, minTtl, cnameZiele, fuerClient, TYP_OPT };
