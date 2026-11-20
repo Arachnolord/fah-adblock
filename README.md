@@ -3,6 +3,22 @@
 Netzweiter DNS-Werbe- und Trackerblocker für das Heimnetz – ein Docker-Container, Weboberfläche
 im FAH-Stil. Entwurf: `docs/superpowers/specs/2026-09-15-fah-adblock-design.md`.
 
+## Screenshots
+
+*Aufgenommen mit Beispieldaten – nur Testabfragen von einem Rechner (127.0.0.1), keine echten Geräte oder Daten.*
+
+![Schutzschild – Übersicht mit Live-Verkehr](docs/screenshots/1-schutzschild.png)
+
+| Statistik | Geräte |
+|---|---|
+| ![Statistik](docs/screenshots/2-statistik.png) | ![Geräte](docs/screenshots/3-geraete.png) |
+| **Listen & Regeln** | **Protokoll** |
+| ![Listen und Regeln](docs/screenshots/4-listen-und-regeln.png) | ![Protokoll](docs/screenshots/5-protokoll.png) |
+| **Profile & Zeitpläne** | **Dienste** |
+| ![Profile](docs/screenshots/6-profile.png) | ![Dienste](docs/screenshots/7-dienste.png) |
+
+<img src="docs/screenshots/8-handy.png" alt="Ansicht auf dem Handy" width="260">
+
 ## Funktionen
 - **Blocklisten** (zur Laufzeit geladen, alle 24 h): HaGeZi Pro, StevenBlack, HaGeZi TIF (Schadsoftware),
   Social, NSFW, Gambling – je Kategorie; eigene Listen per URL.
