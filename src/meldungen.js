@@ -92,7 +92,9 @@ class Meldungen {
       const letzte = this.zuletzt.get(mac);
       if (!letzte) continue;                                                          // hat hier noch nie gefragt – kein Verdacht
       const seit = Math.max(letzte, c.verbunden || 0);
-      if (jetzt - seit < grenze || (this.stilleGemeldet.get(mac) || 0) > jetzt - STILLE_RUHE) continue;
+      // Ruhe 6 h je Gerät – auch über Neustarts: der letzte Eintrag dieser Art steht in der (gespeicherten) Liste
+      const zuletztGemeldet = Math.max(this.stilleGemeldet.get(mac) || 0, ...this.verlauf.filter((v) => v.art === 'stille' && v.geraet === mac).map((v) => v.ts || 0));
+      if (jetzt - seit < grenze || zuletztGemeldet > jetzt - STILLE_RUHE) continue;
       this.stilleGemeldet.set(mac, jetzt);
       const min = Math.round((jetzt - seit) / 60000), echt = this.einst.werte.geraete?.[mac]?.name || c.name, name = echt || mac;
       gemeldet.push(mac);

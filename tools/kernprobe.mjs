@@ -732,6 +732,11 @@ try {
     melS.zuletzt.set('kind', st - 45 * 60000);
     const verdacht = melS.pruefeStille(), nochmal = melS.pruefeStille();
     pruefe('Meldungen: Umgehungsverdacht, wenn das Gerät im Netz ist, aber seit 45 min nicht fragt – nur einmal je 6 h', verdacht.join() === 'kind' && nochmal.length === 0 && /fragt FAH-Adblock nicht mehr/.test(melS.verlauf[0]?.titel));
+    // Neustart (neue Instanz, gleiche Liste): die 6-h-Ruhe gilt weiter – sonst kommt die Meldung nach jedem Neustart erneut
+    const melS2 = new Meldungen({ einst: eK, jetzt: () => st + 60 * 60000, protokoll: () => {},
+      geraete: { stand: st + 60 * 60000, jeMac: new Map([['kind', { gesehen: st + 60 * 60000, ip: '192.168.1.50', verbunden: st - 3 * 3600000, name: 'Kind' }]]) }, filter: { profilVon: (g) => ({ id: g === 'kind' ? 'kinder' : 'standard' }) } });
+    melS2.verlauf = [...melS.verlauf]; melS2.zuletzt.set('kind', st - 45 * 60000);
+    pruefe('Meldungen: Umgehungsverdacht nach einem Neustart nicht erneut innerhalb von 6 h', melS2.pruefeStille().length === 0);
 
     // ACME: Ablauf gegen einen nachgebauten Server (Signaturen werden geprüft), CSR
     const kontoJwk = {}; let bestellt = 0;

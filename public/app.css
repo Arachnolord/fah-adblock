@@ -300,3 +300,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--akzent);box-shadow:0 
 /* Aufs Handy (Web-Push, ntfy) */
 .hinweiszeile{font-size:13px;line-height:1.5;color:var(--text2);border:1px dashed var(--rand2);border-radius:10px;padding:9px 11px;overflow-wrap:anywhere}
 #handyblock .zeile .knopf{flex:0 0 auto}
+/* Meldungen je Gerät gruppiert */
+.meldegruppe{border-bottom:1px solid var(--rand)}
+.meldegruppe>summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 18px;cursor:pointer;list-style:none}
+.meldegruppe>summary::-webkit-details-marker{display:none}
+.meldegruppe>summary .haupt{min-width:0}
+.meldegruppe>summary .haupt b{display:block;font-weight:600}
+.meldegruppe>summary .haupt small{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meldegruppe[open]>summary{background:rgba(127,127,127,.06)}
+.meldegruppe>.zeilen>.zeile{padding-left:34px;border-bottom:0;border-top:1px dashed var(--rand)}
