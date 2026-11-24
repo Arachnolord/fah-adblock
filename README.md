@@ -16,6 +16,8 @@ im FAH-Stil. Entwurf: `docs/superpowers/specs/2026-09-15-fah-adblock-design.md`.
 | ![Listen und Regeln](docs/screenshots/4-listen-und-regeln.png) | ![Protokoll](docs/screenshots/5-protokoll.png) |
 | **Profile & Zeitpläne** | **Dienste** |
 | ![Profile](docs/screenshots/6-profile.png) | ![Dienste](docs/screenshots/7-dienste.png) |
+| **Schutz unterwegs** | **Kinderschutz** |
+| ![Schutz unterwegs](docs/screenshots/9-unterwegs.png) | ![Kinderschutz](docs/screenshots/10-kinderschutz.png) |
 
 <img src="docs/screenshots/8-handy.png" alt="Ansicht auf dem Handy" width="260">
 
@@ -34,10 +36,12 @@ im FAH-Stil. Entwurf: `docs/superpowers/specs/2026-09-15-fah-adblock-design.md`.
   - **Meldungen in FAH-Adblock** (gebündelt, mit Ruhezeit, Kachel im Schutzschild) und **Umgehungsverdacht** (Gerät im WLAN, fragt aber nicht mehr);
     optional **aufs Handy**: Web-Push (FAH-Adblock als App auf dem Home-Bildschirm, RFC 8291/8292 ohne Fremdpakete) und/oder ntfy –
     nach draußen nur Gerät, Art und Anzahl; Ersatz bekommt alles verschlüsselt und springt bei Ausfall ein.
-  - **Schutz unterwegs**: je Gerät ein kurzer Name (`dns-<gerät>.<basis>`) – Android „Privates DNS“ (DNS-over-TLS,
-    Port 853) und iPhone-Profil (DNS-over-HTTPS über FAH-Proxy); unter diesen Namen nur DNS, nie Oberfläche oder API.
-    FAH-Adblock legt die Einträge in FAH-Proxy (Gruppe „AdBlock DNS Domains“, eingeschränktes Dienst-Konto) und die
-    UCG-Portfreigabe selbst an und löscht sie wieder; Zertifikate kommen von FAH-Proxy, Fail-over inklusive.
+- **Schutz unterwegs** (eigene Ansicht „📱 Unterwegs“ – für jedes Gerät, nicht nur Kinder): filtert Handys und Tablets
+  auch im Mobilfunk mit dem Profil des Geräts. Je Gerät ein kurzer Name (`dns-<gerät>.<basis>`) – Android „Privates DNS“
+  (DNS-over-TLS, Port 853) und iPhone-Profil (DNS-over-HTTPS über FAH-Proxy) mit Kurzanleitung und Link zum Weitergeben;
+  unter diesen Namen nur DNS, nie Oberfläche oder API. FAH-Adblock legt die Einträge in FAH-Proxy (Gruppe „AdBlock DNS
+  Domains“, eingeschränktes Dienst-Konto) und die UCG-Portfreigabe selbst an und löscht sie wieder; Zertifikate kommen
+  von FAH-Proxy, Fail-over inklusive.
 - **Rettung**: zuletzt geblockte Domains eines Geräts, ein Klick gibt frei (Gerät 1 h / dauerhaft / alle).
 - **Sperrseite**: gesperrte Seiten zeigen über FAH-Proxy den Hinweis „Diese Seite ist gesperrt“ mit Domain und Grund;
   Werbung und Tracker bleiben stumm geblockt. Das Zertifikat kommt einmal auf jedes Gerät.

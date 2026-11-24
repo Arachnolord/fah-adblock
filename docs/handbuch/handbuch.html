@@ -109,7 +109,8 @@
     <li>Listen &amp; Regeln <span>Domain prüfen, Block- und Freigabelisten, eigene Regeln</span></li>
     <li>Dienste <span>waipu, YouTube, Social Media &amp; Co. – geschützt, nach Listen oder gesperrt</span></li>
     <li>Profile und Zeitfenster <span>Kinder, Unbeschränkt, eigene Profile, Dienste je Profil</span></li>
-    <li>Kinderschutz <span>Meldungen aufs Handy, Zeitlimits, Ruhezeiten, sichere Suche, Hilfe, Schutz unterwegs</span></li>
+    <li>Kinderschutz <span>Meldungen aufs Handy, Zeitlimits, Ruhezeiten, sichere Suche, Hilfe</span></li>
+    <li>Schutz unterwegs <span>Mobilfunk-Schutz je Gerät, Android und iPhone, automatische Freigaben</span></li>
     <li>Statistik</li>
     <li>Einstellungen <span>Jede Einstellung erklärt</span></li>
     <li>Betrieb auf dem NAS <span>manage.sh, Update, Sicherung</span></li>
@@ -573,7 +574,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 <!-- ─────────────────────────── Kinderschutz ─────────────────────────── -->
 <section class="kapitel">
   <h2><span class="nr">11</span>Kinderschutz</h2>
-  <figure><img src="bilder/14b-kinderschutz.jpg" alt="Kinderschutz" style="max-height:110mm"><figcaption>Ansicht Kinderschutz: Meldungen, Zeitkonten und Schutz unterwegs – darunter Hilfsangebote und Altersvorlagen</figcaption></figure>
+  <figure><img src="bilder/14b-kinderschutz.jpg" alt="Kinderschutz" style="max-height:110mm"><figcaption>Ansicht Kinderschutz: Meldungen (mit „Aufs Handy“), Zeitkonten, Hilfsangebote und Altersvorlagen (Beispieldaten)</figcaption></figure>
   <p>Seit 23.11.2026 bündelt die Ansicht <b>Kinderschutz</b>, was Eltern im Alltag brauchen. Enthalten ist alles, was ein DNS-Filter dafür leisten kann.</p>
   <div class="kasten"><span class="titel">Ehrlich: was ein DNS-Filter nicht kann</span><p>FAH-Adblock sieht nur, <i>welche</i> Seiten ein Gerät aufruft, nie den Inhalt von Chats. Mobbing selbst erkennt er nicht. Er sperrt die Orte, an denen es meist passiert (anonyme Frage-Apps, Zufallschats), meldet Versuche, hält Hilfsangebote immer offen und begrenzt Zeiten. Chats mitlesen gehört nicht dazu.</p></div>
   <h3>Neue Kategorien</h3>
@@ -631,10 +632,16 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
     </div>
   </div>
   <div class="kasten"><span class="titel">Haupt und Ersatz</span><p>Eingerichtet wird am Haupt. Der Ersatz bekommt Push-Schlüssel, Geräte und ntfy beim Abgleich verschlüsselt mit und schickt Meldungen selbst nur, solange der Haupt ausgefallen ist (nach 6 Minuten).</p></div>
-  <h3>Schutz unterwegs (Mobilfunk)</h3>
+</section>
+
+<!-- ─────────────────────────── Schutz unterwegs ─────────────────────────── -->
+<section class="kapitel">
+  <h2><span class="nr">12</span>Schutz unterwegs</h2>
+  <figure><img src="bilder/14e-unterwegs.jpg" alt="Schutz unterwegs" style="max-height:110mm"><figcaption>Ansicht 📱 Unterwegs: Basisdomain, automatische Freigaben und Geräte (Beispieldaten)</figcaption></figure>
+  <p>Eine Grundfunktion für alle Geräte – nicht nur für Kinder: Ein Handy oder Tablet filtert damit auch im <b>Mobilfunk</b> und in fremden WLANs über FAH-Adblock, mit dem Profil genau dieses Geräts. Eigener Menüpunkt <b>📱 Unterwegs</b>; die Kachel „Unterwegs geschützt“ im Schutzschild führt direkt dorthin.</p>
   <p>Ein Kinderhandy filtert damit auch unterwegs über FAH-Adblock – mit dem Profil genau dieses Geräts. Jedes Gerät bekommt einen eigenen Namen <span class="mono">dns-&lt;kennung&gt;.&lt;Basisdomain&gt;</span>. Unter diesem Namen antwortet FAH-Adblock nur als DNS-Dienst; Oberfläche, API und Anmeldung sind von außen nicht erreichbar.</p>
   <ol class="schritte">
-    <li><i>Kinderschutz → Schutz unterwegs</i>: einschalten, Basisdomain eintragen (eine Domain, deren Unternamen per Platzhalter auf den Anschluss zeigen), <b>Speichern</b>.</li>
+    <li><i>📱 Unterwegs</i>: einschalten, Basisdomain eintragen (eine Domain, deren Unternamen per Platzhalter auf den Anschluss zeigen), <b>Speichern</b>.</li>
     <li><b>Einmalig FAH-Proxy koppeln:</b> die beiden FAH-Proxy-Adressen (Haupt und Fail-over) sind vorbelegt – Admin-Name, Passwort und ggf. 2FA-Code eingeben, <b>Koppeln</b>. FAH-Adblock legt sich dort ein eigenes Konto „fah-adblock“ mit der Rolle <b>Dienst</b> an (ab FAH-Proxy 0.9.6): Es darf nur die Gruppe <b>„AdBlock DNS Domains“</b> pflegen – keine anderen Einträge, keine Einstellungen, keine geschützten Seiten. Dein Passwort wird nicht gespeichert.</li>
     <li>Gerät hinzufügen. Der Name ist kurz und lesbar (z. B. <span class="mono">dns-fairphone-gen-6.&lt;Basisdomain&gt;</span>), mit ✏️ änderbar.</li>
     <li>Alles Weitere macht FAH-Adblock selbst: Eintrag in FAH-Proxy (an der gerade aktiven Instanz, FAH-Proxy spiegelt ihn), Portfreigabe <b>TCP 853</b> in der UCG, Zertifikat: FAH-Proxy holt es für den Namen ohnehin (Caddy, bei Bedarf ZeroSSL) und gibt es an FAH-Adblock weiter – je Gerät nur EIN Zertifikat, Caddy erneuert es. Wird ein Gerät gelöscht oder der Schutz ausgeschaltet, verschwinden Eintrag bzw. Portfreigabe wieder.</li>
@@ -646,8 +653,9 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
   <div class="kasten"><span class="titel">Gut zu wissen</span><p>Wer den Namen kennt, kann darüber DNS auflösen (Namen mit Zertifikat stehen in öffentlichen Zertifikats-Logs). Die Anfragen werden dem Gerät zugeschrieben und gebremst; Heimnetz-Namen gibt es von draußen nie. Das iPhone-Profil enthält zusätzlich ein Geheimnis im Pfad.</p></div>
 </section>
 
+
 <section class="kapitel">
-  <h2><span class="nr">12</span>Statistik</h2>
+  <h2><span class="nr">13</span>Statistik</h2>
   <figure><img src="bilder/15-statistik.jpg" alt="Statistik"><figcaption>Verlauf, Toplisten mit Beschreibung und aktivste Geräte</figcaption></figure>
   <ul>
     <li><b>Diagramm</b> – Anfragen über die Zeit, grau erlaubt, rot geblockt. Umschalter <b>24 h</b> (je Stunde) oder <b>7 Tage</b> (je Tag). Darunter die Summe und der geblockte Anteil.</li>
@@ -659,7 +667,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 
 <!-- ─────────────────────────── 11 ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">13</span>Einstellungen</h2>
+  <h2><span class="nr">14</span>Einstellungen</h2>
   <h3>🔐 Verschlüsseltes DNS nach außen</h3>
   <figure><img src="bilder/16-einstellungen-1.jpg" alt="Verschlüsseltes DNS" style="max-height:92mm"></figure>
       <p>Wohin FAH-Adblock erlaubte Anfragen weiterschickt. Die Verbindung ist per DNS-over-HTTPS verschlüsselt – weder der Internetanbieter noch jemand dazwischen sieht, welche Seiten aufgerufen werden.</p>
@@ -721,7 +729,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 
 <!-- ─────────────────────────── 12 ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">14</span>Betrieb auf dem NAS</h2>
+  <h2><span class="nr">15</span>Betrieb auf dem NAS</h2>
   <p>FAH-Adblock läuft als ein Docker-Container im Host-Netz des NAS unter <code>/volume3/docker/fah-adblock</code>. Alle Befehle dort per SSH ausführen.</p>
   <table>
     <tr><th>Befehl</th><th>Was er macht</th></tr>
@@ -756,12 +764,12 @@ TZ=Europe/Berlin
 SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
   <p>Werte aus der <code>.env</code> gelten als Startwerte; Erlaubte Netze und Gateway lassen sich danach in der Oberfläche ändern.</p>
   <h3>Sicherung</h3>
-  <p>Für eine vollständige Sicherung genügt der Ordner <code>data/</code> zusammen mit <code>.env</code> und <code>docker-compose.yml</code>. Die Sicherung aus der Oberfläche (Kapitel 13) enthält alle Einstellungen, aber bewusst kein Passwort und keinen UniFi-Schlüssel.</p>
+  <p>Für eine vollständige Sicherung genügt der Ordner <code>data/</code> zusammen mit <code>.env</code> und <code>docker-compose.yml</code>. Die Sicherung aus der Oberfläche (Kapitel 14) enthält alle Einstellungen, aber bewusst kein Passwort und keinen UniFi-Schlüssel.</p>
 </section>
 
 <!-- ─────────────────────────── 13 ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">15</span>Fehlerbehebung</h2>
+  <h2><span class="nr">16</span>Fehlerbehebung</h2>
   <table>
     <tr><th>Problem</th><th>Vorgehen</th></tr>
     <tr><td>Teams-Anrufe kommen nicht zustande oder brechen ab</td><td>Unter Dienste → Messenger &amp; Konferenzen „Microsoft Teams“ und unter Cloud &amp; Arbeit „Microsoft 365“ auf <b>geschützt</b> stellen. Im Protokoll nach dem Gerät filtern: steht dort weiter „geblockt“ bei einer Microsoft-Adresse, die Adresse melden. Steht ein filternder DNS-Anbieter (z. B. DNSforge) in der Anbieterliste, sperrte dieser früher unbemerkt Teile der Anruf-Konfiguration – seit Version 2026.09.21-29 werden geschützte Dienste an ihm vorbei aufgelöst. Bleibt das Protokoll sauber, liegt es nicht am Filter (dann Firewall, VPN oder WLAN prüfen – Anrufe laufen über UDP 3478–3481).</td></tr>
@@ -779,7 +787,7 @@ SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
     <tr><td>Anbieter meldet Fehler</td><td>Einstellungen → Verschlüsseltes DNS zeigt Antwortzeit und Fehler; FAH-Adblock weicht selbst aus.</td></tr>
     <tr><td>Blockliste mit Fehler</td><td>Fehler steht an der Liste, die alte Fassung bleibt aktiv; „↻“ versucht es erneut.</td></tr>
     <tr><td>Seite nach Freigabe noch weg</td><td>Tab schließen und neu öffnen – spätestens nach einer Minute ist die alte Antwort vergessen. Nach einem Update lädt sich die Oberfläche von selbst neu.</td></tr>
-    <tr><td>Android: „Privates DNS-Server nicht erreichbar“</td><td>In <i>Kinderschutz → Schutz unterwegs</i> prüfen: Zertifikat vorhanden? „DoT läuft“? Block „Freigaben – automatisch“: UCG-Portfreigabe ✅? Name exakt (dns-…)?</td></tr>
+    <tr><td>Android: „Privates DNS-Server nicht erreichbar“</td><td>In <i>📱 Unterwegs</i> prüfen: Zertifikat vorhanden? „DoT läuft“? Block „Freigaben – automatisch“: UCG-Portfreigabe ✅? Name exakt (dns-…)?</td></tr>
     <tr><td>Gerät unterwegs: „wartet auf FAH-Proxy“</td><td>Ist FAH-Proxy gekoppelt (Block „Freigaben – automatisch“)? Dann 1–3 Minuten warten, bis FAH-Proxy sein Zertifikat hat; sonst „Jetzt abgleichen“.</td></tr>
     <tr><td>Kind kommt abends nicht in WhatsApp</td><td>Ruhezeit Messenger im Profil (Kinder ab Werk 21:00–06:30) – im Protokoll steht „Ruhezeit“.</td></tr>
   </table>
@@ -787,7 +795,7 @@ SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
 
 <!-- ─────────────────────────── 14 ─────────────────────────── -->
 <section class="kapitel" id="anhang">
-  <h2><span class="nr">16</span>Anhang</h2>
+  <h2><span class="nr">17</span>Anhang</h2>
   <h3>Entscheidungsreihenfolge je Anfrage</h3>
   <ol class="schritte">
     <li><b>Absender prüfen</b> – nicht aus einem erlaubten Netz → Absage (REFUSED).</li>
