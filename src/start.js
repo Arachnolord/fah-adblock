@@ -25,6 +25,7 @@ const { Spiegel } = require('./spiegel');
 const { Zeitkonto } = require('./zeitkonto');
 const { Meldungen } = require('./meldungen');
 const { Benachrichtigung } = require('./benachrichtigung');
+const { ladeErweiterungen } = require('./erweiterungen');
 const { Acme } = require('./acme');
 const { Unterwegs } = require('./unterwegs');
 const { FahProxy } = require('./fahproxy');
@@ -134,7 +135,9 @@ async function main() {
     empfangen: (d, code) => { meldungen.empfangen(d.meldungen || {}); zeitkonto.hinzufuegen(d.nutzung); return { aufgebraucht: zeitkonto.aufgebrauchtAlle((gid) => filter.profilVon(gid)), unterwegs: code ? unterwegs.paketFuerErsatz(code, d.unterwegsHash, typeof d.unterwegsSchluessel === 'string' && d.unterwegsSchluessel.length < 200 ? d.unterwegsSchluessel : null) : null }; },
   };
   spiegel = new Spiegel({ verzeichnis: DATEN, einst, geheimnis: GEHEIM, version: VERSION, eigeneUrl, austausch, anwenden: () => { throw new Error('Weboberfläche noch nicht bereit'); } });
-  const web = webServer({ sperrCa: path.join(DATEN, 'sperrseite-ca.crt'), auth: new Auth({ verzeichnis: DATEN, geheimnis: GEHEIM }), einst, listen, filter, upstream, dns, geraete, protokoll, live, version: VERSION, statisch: path.join(WURZEL, 'public'), daten: DATEN, spiegel, zeitkonto, meldungen, unterwegs, acme, benachrichtigung });
+  // Optionale Erweiterungen (src/erweiterungen/<name>/) – fehlen sie, läuft alles wie gehabt
+  const erweiterungen = ladeErweiterungen(path.join(__dirname, 'erweiterungen'), { einst, verzeichnis: DATEN, geheimnis: GEHEIM, meldungen, filter, geraete, istErsatz, protokoll: (t) => console.log(t) });
+  const web = webServer({ sperrCa: path.join(DATEN, 'sperrseite-ca.crt'), auth: new Auth({ verzeichnis: DATEN, geheimnis: GEHEIM }), einst, listen, filter, upstream, dns, geraete, protokoll, live, version: VERSION, statisch: path.join(WURZEL, 'public'), daten: DATEN, spiegel, zeitkonto, meldungen, unterwegs, acme, benachrichtigung, erweiterungen });
   unterwegs.starten();
   einst.beobachten(() => unterwegs.dotPruefen());
   if (spiegel.istErsatz()) { spiegel.starten(); setTimeout(() => spiegel.abgleichen().catch(() => {}), 5000).unref(); }
@@ -151,7 +154,7 @@ async function main() {
     if (alt) einst.aendern((y) => { for (const [g, t] of Object.entries(y.pausen.geraete)) if (t < jetzt) delete y.pausen.geraete[g]; if (y.pausen.global < jetzt) y.pausen.global = 0; y.regeln = y.regeln.filter((r) => !r.bis || r.bis > jetzt); });
   }, 60000).unref();
 
-  const ende = () => { console.log('[fah-adblock] beende …'); dns.stoppen(); unterwegs.stoppen(); zeitkonto.speichern(); protokoll.schliessen(); process.exit(0); };
+  const ende = () => { console.log('[fah-adblock] beende …'); for (const e of erweiterungen) { try { e.stoppen?.(); } catch (x) {} } dns.stoppen(); unterwegs.stoppen(); zeitkonto.speichern(); protokoll.schliessen(); process.exit(0); };
   process.on('SIGTERM', ende); process.on('SIGINT', ende);
 }
 

@@ -33,7 +33,7 @@ const pruefe = (bed, text, status = 400) => { if (!bed) throw new HttpFehler(sta
 const id = () => crypto.randomBytes(6).toString('hex');
 
 function webServer(k) {
-  const { auth, einst, listen, filter, upstream, dns, geraete, protokoll, live, version, statisch, daten = null, spiegel = null, sperrCa = '', zeitkonto = null, meldungen = null, unterwegs = null, acme = null, benachrichtigung = null } = k;
+  const { auth, einst, listen, filter, upstream, dns, geraete, protokoll, live, version, statisch, daten = null, spiegel = null, sperrCa = '', zeitkonto = null, meldungen = null, unterwegs = null, acme = null, benachrichtigung = null, erweiterungen = [] } = k;
   let sperrAufrufe = 0;
   const routen = [];
   const route = (methode, muster, fn, { offen = false } = {}) => {
@@ -73,7 +73,7 @@ function webServer(k) {
     return { ok: true, standardPasswort: r.standardPasswort };
   }, { offen: true });
   route('POST', '/api/abmelden', ({ res, nutzer }) => { if (nutzer) auth.sitzungenBeenden(nutzer.name); res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`); return { ok: true }; }, { offen: true });
-  route('GET', '/api/ich', ({ nutzer }) => ({ name: nutzer.name, standardPasswort: nutzer.standardPasswort, csrf: nutzer.csrf, version, spiegel: spiegel ? { rolle: spiegel.rolle, haupt_url: spiegel.status().haupt_url } : null }));
+  route('GET', '/api/ich', ({ nutzer }) => ({ name: nutzer.name, standardPasswort: nutzer.standardPasswort, csrf: nutzer.csrf, version, erweiterungen: erweiterungen.filter((e) => e.oberflaeche).map((e) => e.name), spiegel: spiegel ? { rolle: spiegel.rolle, haupt_url: spiegel.status().haupt_url } : null }));
   route('POST', '/api/passwort', ({ req, res, nutzer, body }) => { const r = auth.passwortAendern(nutzer.name, body.alt, body.neu); if (r.fehler) throw new HttpFehler(400, r.fehler); cookieSetzen(req, res, r.cookie); return { ok: true }; });   // andere Sitzungen sind damit abgemeldet, diese läuft mit neuem Cookie weiter
 
   // ── Übersicht, Statistik, Live ────────────────────────────────────────────
@@ -86,7 +86,8 @@ function webServer(k) {
   route('GET', '/api/uebersicht', ({ q }) => {
     const jetzt = Date.now(), ls = listen.status();
     return {
-      version, jetzt, kennzahlen: protokoll.kennzahlen(+q.get('stunden') || 24), pause: { global: w().pausen.global > jetzt ? w().pausen.global : 0 },
+      version, jetzt, kennzahlen: protokoll.kennzahlen(+q.get('stunden') || 24),
+      erweiterungen: erweiterungen.map((e) => { try { return e.kachel ? e.kachel() : null; } catch (x) { return null; } }).filter(Array.isArray), pause: { global: w().pausen.global > jetzt ? w().pausen.global : 0 },
       dns: dns.status(), upstream: upstream.status(), geraete: geraete.status(),
       listen: { gesamt: ls.gesamt, an: ls.quellen.filter((q) => q.an).length, fehler: ls.quellen.filter((q) => q.an && q.fehler).length, laedt: ls.quellen.some((q) => q.laedt) },
       protokoll: { groesse: protokoll.groesse(), fehler: protokoll.fehler, tage: w().protokoll.tage },
@@ -533,6 +534,8 @@ function webServer(k) {
     }, { offen: true });
   }
   // Am Ersatz ändert man nichts – sonst wäre es beim nächsten Abgleich wieder weg (Ausnahmen: Instanz-eigene Dinge)
+  // Optionale Erweiterungen hängen ihre Routen an (gleicher Schutz: Anmeldung, CSRF, Herkunft, Ersatz nur lesend)
+  for (const e of erweiterungen) { try { if (e.routen) e.routen(route, { pruefe, HttpFehler, w }); } catch (x) { console.warn(`[erweiterungen] ${e.name}: Routen: ${x.message}`); } }
   const ERSATZ_ERLAUBT = /^\/api\/(anmelden|abmelden|passwort|spiegel(\/.*)?|cache\/leeren|listen\/aktualisieren|einstellungen\/unifi(\/test)?)$/;
 
   // ── Verteilung ────────────────────────────────────────────────────────────

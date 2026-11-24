@@ -67,12 +67,12 @@ class Meldungen {
     const aussen = b.art.startsWith('limit:') ? 'Die Zeit für heute ist aufgebraucht. Mehr Zeit gibst du in FAH-Adblock unter Kinderschutz.' : `${b.anzahl} ${b.anzahl === 1 ? 'Versuch' : 'Versuche'} – gesperrt. Welche Seiten, steht in FAH-Adblock unter Kinderschutz.`;
     await this.melden({ titel: `${b.name}: ${was}`, aussenTitel: `${b.benannt ? b.name : 'Unbenanntes Gerät'}: ${was}`, text, aussen, details: b.art.startsWith('limit:') ? '' : domains, ernst, geraet: b.geraet, art: b.art });
   }
-  async melden({ titel, aussenTitel = null, text, aussen = null, details = '', ernst = false, geraet = '', art = '' }) {
+  async melden({ titel, aussenTitel = null, text, aussen = null, details = '', ernst = false, geraet = '', art = '', handy = true }) {
     // Erst in die Liste (geht nie verloren), dann aufs Handy – ein hängender Versand hält nichts auf
     const eintrag = { ts: this.jetzt(), titel, text, details, geraet, art, ernst };
     this.verlauf.unshift(eintrag); this.verlauf = this.verlauf.slice(0, 100);
     this.sichern();
-    if (this.senden) {
+    if (this.senden && handy) {
       try { const r = await this.senden({ titel: aussenTitel || titel, text: aussen || text, ernst, tag: `${geraet}|${art}`.slice(0, 64) }); if (r && (r.ntfy !== null || r.push || r.fehler?.length)) eintrag.handy = { ntfy: r.ntfy, push: r.push, fehler: r.fehler?.length ? r.fehler.slice(0, 3) : undefined }; }
       catch (e) { eintrag.handy = { fehler: [e.message] }; }
       if (eintrag.handy) this.sichern();

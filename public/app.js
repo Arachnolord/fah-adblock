@@ -209,6 +209,7 @@
       [ks.zeitkonten.aufgebraucht ? 'rot' : '', ks.zeitkonten.geraete ? zahl(ks.zeitkonten.aufgebraucht) : '–', 'Zeitlimits erreicht', ks.zeitkonten.geraete ? `${zahl(ks.zeitkonten.geraete)} ${ks.zeitkonten.geraete === 1 ? 'Gerät' : 'Geräte'} mit Limit` : 'keine Limits festgelegt', 'kinderschutz'],
       [ks.unterwegs?.an ? 'gruen' : '', ks.unterwegs?.an ? zahl(ks.unterwegs.aktiv) : 'aus', 'Unterwegs geschützt', ks.unterwegs?.an ? `${zahl(ks.unterwegs.geraete)} eingerichtet · letzte Stunde` : 'Mobilfunk-Schutz aus', 'kinderschutz'],
     );
+    for (const k of u.erweiterungen || []) if (Array.isArray(k) && k.length >= 4) karten.push([['rot', 'gruen'].includes(k[0]) ? k[0] : '', esc(k[1]), esc(k[2]), esc(k[3]), /^[a-z]+$/.test(String(k[4] || '')) ? k[4] : '']);
     el.innerHTML = karten.map(([art, wert, name, unter, ziel]) => `<div class="karte kz ${art}" ${ziel ? `data-ansicht="${ziel}" role="link" tabindex="0" style="cursor:pointer"` : ''}><div class="wert">${wert}</div><div class="name">${name}</div><div class="unter">${unter}</div></div>`).join('');
     const rate = $('#rate'); if (rate) { const minute = S.live.filter((e) => e.t > Date.now() - 60000).length; rate.textContent = zahl(minute); }
   }
@@ -949,6 +950,7 @@
       <section class="karte"><div class="kartekopf">🆘 Hilfsangebote – immer erreichbar</div><div class="kartekoerper">${info('Diese Beratungs- und Notfallstellen sind auf allen Geräten immer erreichbar – keine Liste, kein Profil, keine Ruhezeit und kein Zeitlimit kann sie sperren. Gut zu wissen für Kinder: Hilfe gibt es anonym und kostenlos.')}<div class="zeilen">${k.hilfe.map((h) => `<div class="zeile umbruch"><span class="zsymbol">${esc(h.symbol)}</span><div class="haupt"><b>${esc(h.name)}</b><small>${esc(h.hinweis)} · ${esc(h.domains.join(', '))}</small></div></div>`).join('')}</div></div></section>
       <section class="karte"><div class="kartekopf">🎓 Altersvorlagen</div><div class="kartekoerper">${info('Fertige Profile nach Alter, angelehnt an die Empfehlungen von klicksafe und SCHAU HIN!. Ein Klick legt ein neues Profil an; anpassen kannst du danach alles unter Profile. Fernsehen und YouTube werden nie gesperrt, für Jüngere aber gefiltert.')}<div class="zeilen">${k.vorlagen.map((v) => `<div class="zeile umbruch"><span class="zsymbol" style="color:${esc(v.farbe)}">●</span><div class="haupt"><b>${esc(v.name)}</b><small>${esc(v.beschreibung)}</small></div><button class="knopf klein" data-vorlageneu="${esc(v.id)}">Als Profil anlegen</button></div>`).join('')}</div></div></section>
       </div>`;
+    erweiterungenKinderschutz();
     const haupt = $('#haupt');
     const sicher = async (fn, ok) => { try { await fn(); if (ok) toast(ok); zeigeKinderschutz(); } catch (err) { toast(err.message, 'fehler'); } };
     $('#mespeichern').onclick = () => sicher(() => api('/api/kinderschutz/meldungen', { methode: 'PUT', daten: { an: $('#mean').checked,
@@ -1149,9 +1151,28 @@
   }
   const upstreamZeile = (a, i, st) => `<div class="upzeile formzeile" style="margin-bottom:8px"><div class="uprang"><button class="knopf klein leise" data-uprauf title="nach oben">▲</button><span class="upnr">${i + 1}</span><button class="knopf klein leise" data-uprab title="nach unten">▼</button></div><div class="feld" style="flex:0 1 120px"><label>Name</label><input type="text" data-upname value="${esc(a.name)}"></div><div class="feld"><label>DoH-Adresse ${st?.ms != null ? `<span class="chip gruen">${st.ms} ms</span>` : ''}${st?.fehler ? `<span class="chip rot" title="${esc(st.letzterFehler || '')}">Fehler</span>` : ''}</label><input type="url" data-upurl value="${esc(a.url)}"></div><button class="knopf klein leise" data-upweg aria-label="entfernen">✕</button></div>`;
 
+  // ── Optionale Erweiterungen (Skripte unter erweiterungen/<name>.js, nur wenn der Server sie nennt) ──
+  const ERWEITERUNGEN = new Map();
+  window.FAH = Object.freeze({ api, esc, info, toast, vor, zahl, hinweisDialog, $, $$, registriere: (name, teile) => { if (/^[a-z0-9-]{1,40}$/.test(name) && teile && typeof teile === 'object') ERWEITERUNGEN.set(name, teile); } });
+  async function ladeErweiterungsSkripte() {
+    await Promise.all((S.ich?.erweiterungen || []).filter((n) => /^[a-z0-9-]{1,40}$/.test(n) && !document.querySelector(`script[data-erw="${n}"]`)).map((n) => new Promise((fertig) => {
+      const sk = document.createElement('script'); sk.src = `erweiterungen/${n}.js?v=${encodeURIComponent(S.ich.version || '')}`; sk.defer = true; sk.dataset.erw = n;
+      sk.onload = sk.onerror = () => fertig(); setTimeout(fertig, 8000); document.head.appendChild(sk);
+    })));
+  }
+  function erweiterungenKinderschutz() {
+    const raster = $('#haupt .raster'); if (!raster) return;
+    for (const [name, teile] of ERWEITERUNGEN) {
+      if (typeof teile.kinderschutz !== 'function') continue;
+      const el = document.createElement('section'); el.className = 'karte'; el.dataset.erw = name; raster.appendChild(el);
+      Promise.resolve().then(() => teile.kinderschutz(el)).catch((err) => { el.innerHTML = `<div class="kartekopf">${esc(name)}</div><div class="kartekoerper fehlertext">${esc(err.message)}</div>`; });
+    }
+  }
+
   // ── Start ──────────────────────────────────────────────────────────────────
   async function start() {
     try { S.ich = await api('/api/ich'); } catch (e) { return; }
+    await ladeErweiterungsSkripte();
     stoppeAlles(); rahmen();
     window.onhashchange = route;
     await ladeUebersicht();

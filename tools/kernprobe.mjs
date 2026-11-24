@@ -497,7 +497,17 @@ try {
   const prot2 = new Protokoll({ datei: path.join(tmp, 'web', 'p.db') });
   const authW = new Auth({ verzeichnis: path.join(tmp, 'web'), geheimnis: 'y'.repeat(32) });
   fs.mkdirSync(path.join(tmp, 'pub'), { recursive: true }); fs.writeFileSync(path.join(tmp, 'pub', 'index.html'), '<h1>ok</h1><link rel="stylesheet" href="app.css"><script src="app.js" defer></script>');
-  const web = webServer({ auth: authW, einst, listen, filter, upstream: up, dns: srv, geraete: { status: () => ({ unifi: {} }), unifiLesen: async () => 0, iconVon: (id) => (id === 'aa:bb:cc:dd:ee:ff' ? 1681 : null), nameVon: () => '' }, protokoll: prot2, live: new Set(), version: 'probe', statisch: path.join(tmp, 'pub'), daten: path.join(tmp, 'web') });
+  // Erweiterungen (allgemeine Schnittstelle): Probe-Erweiterung, eine kaputte, ein ungültiger Ordnername
+  const { ladeErweiterungen } = require('../src/erweiterungen.js');
+  const erwLeer = ladeErweiterungen(path.join(tmp, 'gibtsnicht'), {});
+  const erwDir = path.join(tmp, 'erw'); for (const n of ['probe', 'kaputt', 'Ungueltig!']) fs.mkdirSync(path.join(erwDir, n), { recursive: true });
+  fs.writeFileSync(path.join(erwDir, 'probe', 'index.js'), "module.exports = (d) => ({ name: 'probe', oberflaeche: true, routen(route, h) { route('GET', '/api/probe-erw', () => ({ ok: true, a: d.a, hilfen: typeof h.pruefe + typeof h.w })); }, kachel: () => ['', '7', 'Probe', 'unter', 'kinderschutz'] });");
+  fs.writeFileSync(path.join(erwDir, 'kaputt', 'index.js'), "throw new Error('absichtlich');");
+  fs.writeFileSync(path.join(erwDir, 'Ungueltig!', 'index.js'), "module.exports = () => ({ name: 'x' });");
+  const erwLogs = [], erw = ladeErweiterungen(erwDir, { a: 1, protokoll: (t) => erwLogs.push(t) });
+  pruefe('Erweiterungen: Ordner fehlt → []', Array.isArray(erwLeer) && erwLeer.length === 0);
+  pruefe('Erweiterungen: Erweiterung, die beim Laden wirft, stoppt den Rest nicht; ungültige Ordnernamen werden übergangen', erw.length === 1 && erw[0].name === 'probe' && erwLogs.some((t) => t.includes('kaputt') && t.includes('absichtlich')), JSON.stringify({ n: erw.map((e) => e.name), erwLogs }));
+  const web = webServer({ auth: authW, einst, listen, filter, upstream: up, dns: srv, geraete: { status: () => ({ unifi: {} }), unifiLesen: async () => 0, iconVon: (id) => (id === 'aa:bb:cc:dd:ee:ff' ? 1681 : null), nameVon: () => '' }, protokoll: prot2, live: new Set(), version: 'probe', statisch: path.join(tmp, 'pub'), daten: path.join(tmp, 'web'), erweiterungen: erw });
   await new Promise((r) => web.listen(0, '127.0.0.1', r));
   const B = `http://127.0.0.1:${web.address().port}`;
   const holen = (p, o = {}) => fetch(B + p, o);
@@ -510,6 +520,11 @@ try {
   const fremd = await holen('/api/pause', { method: 'POST', headers: { cookie, 'x-csrf': ich.csrf, origin: 'https://boese.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ minuten: 5 }) });
   pruefe('Web: Schreiben ohne CSRF-Token oder von fremder Herkunft → 403', ohneCsrf.status === 403 && fremd.status === 403);
   const post = (p, daten, m = 'POST') => holen(p, { method: m, headers: { cookie, 'x-csrf': ich.csrf, 'Content-Type': 'application/json' }, body: JSON.stringify(daten) });
+  {
+    const pe = await (await holen('/api/probe-erw', { headers: { cookie } })).json();
+    const ue = await (await holen('/api/uebersicht', { headers: { cookie } })).json();
+    pruefe('Erweiterungen: Test-Erweiterung im Temp-Ordner wird geladen, Route /api/probe-erw antwortet, /api/ich nennt sie, /api/uebersicht enthält ihre Kachel', pe.ok && pe.a === 1 && pe.hilfen === 'functionfunction' && JSON.stringify(ich.erweiterungen) === '["probe"]' && ue.erweiterungen?.[0]?.[2] === 'Probe', JSON.stringify({ pe, e: ich.erweiterungen, k: ue.erweiterungen }));
+  }
   const regel = await (await post('/api/regeln', { typ: 'erlauben', muster: 'ads.example.com', geltung: 'geraet:mac7', minuten: 60 })).json();
   const falsch = await post('/api/regeln', { typ: 'erlauben', muster: 'nix da', geltung: 'alle' });
   pruefe('Web: Regel mit Ablauf gespeichert, ungültige Regel 400', !!regel.id && regel.bis > Date.now() && einst.werte.regeln.some((r) => r.id === regel.id) && falsch.status === 400);
@@ -730,8 +745,8 @@ try {
       if (!echt || geschuetzt.url !== url) return r(400, { detail: 'Signatur falsch' });
       if (url === 'https://acme.test/acct') return r(201, { status: 'valid' }, { location: 'https://acme.test/acct/1' });
       if (url === 'https://acme.test/order') { bestellt++; return r(201, { status: 'pending', authorizations: ['https://acme.test/authz'], finalize: 'https://acme.test/fin' }, { location: 'https://acme.test/order/1' }); }
-      if (url === 'https://acme.test/authz') return r(200, { status: fakeAcme.geprueft ? 'valid' : 'pending', challenges: [{ type: 'http-01', url: 'https://acme.test/chall', token: 'tok123456789' }] });
-      if (url === 'https://acme.test/chall') { fakeAcme.geprueft = acmeK.antwort('tok123456789') === `tok123456789.${acmeK.daumen()}`; return r(200, {}); }
+      if (url === 'https://acme.test/authz') return r(200, { status: fakeAcme.geprueft ? 'valid' : 'pending', challenges: [{ type: 'http-01', url: 'https://acme.test/chall', token: 'tok-beispiel-1' }] });
+      if (url === 'https://acme.test/chall') { fakeAcme.geprueft = acmeK.antwort('tok-beispiel-1') === `tok-beispiel-1.${acmeK.daumen()}`; return r(200, {}); }
       if (url === 'https://acme.test/fin') { fakeAcme.csr = JSON.parse(Buffer.from(body.payload, 'base64url')).csr; return r(200, { status: 'processing' }); }
       if (url === 'https://acme.test/order/1') return r(200, { status: 'valid', certificate: 'https://acme.test/cert' });
       if (url === 'https://acme.test/cert') return r(200, fakeAcme.kette);
@@ -1001,6 +1016,9 @@ try {
     const unb = []; const mu = new Meldungen({ einst: { werte: { meldungen: { an: true, profile: ['kinder'], kategorien: ['anonym'] } } }, senden: async (n) => { unb.push(n); return { ntfy: true, push: 0, fehler: [] }; }, kategorieName: () => 'Anonyme Chats', protokoll: () => {} });
     mu.sammle('kat:anonym', { geraet: 'aa:bb:cc:dd:ee:ff', kategorie: 'anonym', domain: 'ngl.link' }); await mu.abschicken('aa:bb:cc:dd:ee:ff|kat:anonym');
     pruefe('Versand: tröpfelnder Server endet nach der harten Frist; Meldung steht sofort in der Liste, auch wenn das Senden hängt; ohne Gerätenamen geht keine MAC nach draußen', haengFehler === 'Zeitüberschreitung' && dauer < 4000 && sofort && unb[0]?.titel === 'Unbenanntes Gerät: Anonyme Chats gesperrt' && mu.verlauf[0].titel.startsWith('aa:bb'), JSON.stringify({ haengFehler, dauer, sofort, unb }));
+    const mH = []; const mlH = new Meldungen({ einst: { werte: { meldungen: { an: true } } }, senden: async (n) => { mH.push(n); return { ntfy: true, push: 0, fehler: [] }; }, protokoll: () => {} });
+    await mlH.melden({ titel: 'h', text: 'i', handy: false });
+    pruefe('Meldungen: handy:false → Eintrag in der Liste, senden nicht aufgerufen', mlH.verlauf.length === 1 && mH.length === 0);
     const ohne = new Meldungen({ einst: { werte: { meldungen: { an: true } } }, protokoll: () => {} }); await ohne.melden({ titel: 'x', text: 'y' });
     pruefe('Meldungen: ohne eingerichteten Weg bleibt alles in der Liste (kein Versand, kein Fehler)', ohne.verlauf.length === 1 && !ohne.verlauf[0].handy);
   }
