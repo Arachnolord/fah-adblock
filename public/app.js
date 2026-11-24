@@ -878,7 +878,14 @@
     let abo = await reg.pushManager.getSubscription();
     const passt = abo && abo.options?.applicationServerKey && btoa(String.fromCharCode(...new Uint8Array(abo.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === schluessel;
     if (abo && !passt) { await abo.unsubscribe(); abo = null; }
-    if (!abo) abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: schluesselBytes(schluessel) });
+    if (!abo) {
+      try { abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: schluesselBytes(schluessel) }); }
+      catch (e) {
+        // Brave (und manche Chromium-Varianten) haben Googles Push-Dienst ab Werk aus → verständlich erklären statt „push service error“
+        if (/push service|registration failed|AbortError/i.test(`${e.name} ${e.message}`)) throw new Error(navigator.brave ? 'Brave hat den Push-Dienst ausgeschaltet: Einstellungen → Datenschutz und Sicherheit → „Google-Dienste für Push-Nachrichten verwenden“ einschalten, Brave neu starten und noch einmal versuchen – oder Safari/Chrome nehmen.' : 'Dieser Browser erreicht keinen Push-Dienst. In Brave: Einstellungen → Datenschutz → „Google-Dienste für Push-Nachrichten verwenden“ einschalten. Sonst Safari oder Chrome nehmen.');
+        throw e;
+      }
+    }
     const name = (prompt('Name für dieses Gerät (z. B. iPhone Mama):', geraetName()) || geraetName()).trim().slice(0, 60);
     await api('/api/push/abo', { methode: 'POST', daten: { abo: abo.toJSON(), name } });
   }
