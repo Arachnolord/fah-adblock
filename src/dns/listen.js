@@ -50,7 +50,14 @@ function parse(text, { art = 'sperren' } = {}) {
   return { domains, exakt, ungueltig, anzahl: domains.size + exakt.size };
 }
 
+// Eingebaute Listen („eingebaut:<name>“) kommen aus dem Programm selbst (src/daten) – sie wandern mit jedem Update mit
+const EINGEBAUT = { anonym: () => require('../daten/kinderschutz').ANONYM.join('\n') };
+
 function holen(url, { seit = null, timeout = 60000 } = {}, umleitungen = 0) {
+  if (String(url).startsWith('eingebaut:')) {
+    const quelle = EINGEBAUT[String(url).slice(10)];
+    return quelle ? Promise.resolve({ text: quelle(), geaendert: Date.now() }) : Promise.reject(new Error('Eingebaute Liste unbekannt'));
+  }
   return new Promise((ok, nein) => {
     const modul = url.startsWith('https:') ? https : http;
     const req = modul.get(url, { timeout, lookup, headers: { 'User-Agent': 'FAH-Adblock/1.0', 'Accept-Encoding': 'gzip', ...(seit ? { 'If-Modified-Since': new Date(seit).toUTCString() } : {}) } }, (res) => {
@@ -117,7 +124,8 @@ class Listen {
     if (!maske) return [];
     return this.quellen.filter((q) => maske & this.bits.get(q.id)).map((q) => q.id);
   }
-  faellig(q) { const s = this.stand[q.id]; return q.an && (!s?.geprueft || this.jetzt() - s.geprueft > TAG || (s.fehler && this.jetzt() - s.geprueft > 3600000)); }
+  // eingebaute Listen einmal je Start neu schreiben – ein Update bringt neue Einträge mit
+  faellig(q) { const s = this.stand[q.id]; return q.an && (!s?.geprueft || this.jetzt() - s.geprueft > TAG || (s.fehler && this.jetzt() - s.geprueft > 3600000) || (String(q.url).startsWith('eingebaut:') && !(this.eingebautFrisch ||= new Set()).has(q.id))); }
   // gruppe: nur Freigabelisten („freigabe“) oder nur Sperrlisten („sperren“)
   async aktualisieren({ alle = false, nur = null, gruppe = null } = {}) {
     if (this.laufend) return this.laufend;
@@ -141,6 +149,7 @@ class Listen {
           fs.renameSync(this.dateiVon(q.id) + '.tmp', this.dateiVon(q.id));
           geschrieben = true;
           this.stand[q.id] = { anzahl, ungueltig, geprueft: this.jetzt(), geaendert: r.geaendert || this.jetzt(), fehler: null, laedt: false };
+          if (String(q.url).startsWith('eingebaut:')) (this.eingebautFrisch ||= new Set()).add(q.id);
           ergebnis[q.id] = `${anzahl} Einträge`;
         } catch (e) {
           this.stand[q.id] = { ...alt, geprueft: this.jetzt(), fehler: e.message, laedt: false };

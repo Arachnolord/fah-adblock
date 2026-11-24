@@ -30,6 +30,9 @@ const { Auth } = require('../src/auth.js');
 const { Einstellungen, bereinigen, vorgaben, verschluesseln, entschluesseln } = require('../src/einstellungen.js');
 const { webServer } = require('../src/web/server.js');
 const { Spiegel } = require('../src/spiegel.js');
+const { Benachrichtigung, pushVerschluesseln, vapidKopf, endpunktOk } = require('../src/benachrichtigung.js');
+const { Meldungen } = require('../src/meldungen.js');
+const nodeCrypto = require('node:crypto');
 const dnsPacket = require('dns-packet');
 
 const ergebnisse = [];
@@ -624,6 +627,383 @@ try {
   const pkFalsch = await PD.sende('/api/spiegel/partner', { rolle: 'ersatz', url: PB.basis, eigene_url: PD.basis, name: 'admin', passwort: 'falsch', bestaetigt: true });
   const pkEigen = await PD.sende('/api/spiegel/partner', { rolle: 'ersatz', url: PD.basis, eigene_url: PD.basis, name: 'admin', passwort: 'admin', bestaetigt: true });
   pruefe('Partner: falsches Passwort → 400 mit Hinweis, eigene Adresse abgelehnt; /api/health nennt App und Partner', pkFalsch.status === 400 && /Anmeldung beim Partner/.test((await pkFalsch.json()).fehler) && pkEigen.status === 400 && PD.sp.rolle === 'haupt' && gesundPA.app === 'fah-adblock' && gesundPA.partner === PC.basis, JSON.stringify(gesundPA));
+
+  // ── Kinderschutz (23.11.2026) ────────────────────────────────────────────
+  {
+    const { Zeitkonto } = require('../src/zeitkonto.js');
+    const { Meldungen } = require('../src/meldungen.js');
+    const { Unterwegs } = require('../src/unterwegs.js');
+    const { Acme, csr } = require('../src/acme.js');
+    const ks = require('../src/daten/kinderschutz.js');
+    const kd = path.join(tmp, 'ks'); fs.mkdirSync(kd, { recursive: true });
+    // Einstellungen: neue Kategorien/Listen, Migration des Profils „Kinder“ genau einmal
+    const v0 = vorgaben({});
+    pruefe('Kinderschutz: Kategorien anonym/drogen/umgehung/piraterie und Listen ab Werk, Betrug-Liste aus', ['anonym', 'drogen', 'umgehung', 'piraterie'].every((k) => v0.kategorien.some((x) => x.id === k)) && v0.listen.find((l) => l.id === 'fah-anonym')?.url === 'eingebaut:anonym' && v0.listen.find((l) => l.id === 'blp-betrug')?.an === false);
+    const alt = JSON.parse(JSON.stringify(v0)); delete alt.migrationen; alt.profile = alt.profile.map((p) => (p.id === 'kinder' ? { id: 'kinder', name: 'Kinder', farbe: '#fff', kategorien: { werbung: { an: true, zeitplan: [] } } } : p));
+    alt.vorgabenListen = alt.listen.filter((l) => !['fah-anonym', 'blp-drogen', 'blp-vaping', 'hagezi-umgehung', 'blp-piraterie', 'blp-betrug'].includes(l.id)).map((l) => l.id);
+    alt.listen = alt.listen.filter((l) => alt.vorgabenListen.includes(l.id));
+    fs.writeFileSync(path.join(kd, 'einstellungen.json'), JSON.stringify(alt));
+    const eM = new Einstellungen({ verzeichnis: kd, geheimnis: 'k'.repeat(32), env: {} }).laden();
+    const kM = eM.werte.profile.find((p) => p.id === 'kinder');
+    const migriert = kM.kategorien.anonym?.an && kM.kategorien.umgehung?.an && kM.ruhezeiten?.messenger?.length && kM.sicher?.suche && eM.werte.listen.some((l) => l.id === 'blp-drogen') && eM.werte.migrationen.includes('kinderschutz-2026-11');
+    eM.aendern((x) => { x.profile.find((p) => p.id === 'kinder').kategorien.anonym.an = false; delete x.profile.find((p) => p.id === 'kinder').ruhezeiten; });
+    const eM2 = new Einstellungen({ verzeichnis: kd, geheimnis: 'k'.repeat(32), env: {} }).laden();
+    pruefe('Kinderschutz: Migration ergänzt das Profil „Kinder“ einmal – spätere Änderungen des Betreibers bleiben', migriert && eM2.werte.profile.find((p) => p.id === 'kinder').kategorien.anonym.an === false && !eM2.werte.profile.find((p) => p.id === 'kinder').ruhezeiten);
+    const { holen: listeHolen } = require('../src/dns/listen.js');
+    const eingebaut = await listeHolen('eingebaut:anonym');
+    pruefe('Kinderschutz: eingebaute Liste „anonym“ wird aus dem Programm gelesen (ngl.link, tellonym.me)', parse(eingebaut.text).domains.has('ngl.link') && parse(eingebaut.text).domains.has('tellonym.me'));
+
+    // Filter: Hilfe, Ruhezeit, Zeitlimit, sichere Suche
+    const T = Date.parse('2026-11-23T22:00:00+01:00');   // Montag 22:00
+    const lK = new Listen({ verzeichnis: path.join(kd, 'l'), holer: async (u) => ({ text: u.includes('anonym') ? ks.ANONYM.join('\n') : 'juuuport.de\nporn.example.com\n' + Array.from({ length: 12 }, (_, i) => `x${i}.example.com`).join('\n') }), protokoll: () => {} });
+    lK.konfigurieren([{ id: 'a', url: 'eingebaut:anonym', kategorie: 'anonym', an: true }, { id: 'j', url: 'https://x/jugend', kategorie: 'jugendschutz', an: true }]); lK.laden(); await lK.aktualisieren();
+    let jetztK = T; const zk = new Zeitkonto({ jetzt: () => jetztK, zeitzone: 'Europe/Berlin' });
+    const fK = new Filter({ listen: lK, jetzt: () => jetztK, zeitzone: 'Europe/Berlin', zeitkonto: zk });
+    const profK = { id: 'kinder', kategorien: { anonym: { an: true, zeitplan: [] }, jugendschutz: { an: true, zeitplan: [] } }, ruhezeiten: { messenger: [{ tage: [1, 2, 3, 4, 5, 6, 7], von: '21:00', bis: '06:30' }], spiele: [{ tage: [1], von: '21:00', bis: '23:00' }] }, sicher: { suche: true, youtube: 'moderat' }, limits: { 'dienst:tiktok': 30, 'rubrik:spiele': 60 } };
+    fK.konfigurieren({ regeln: [{ id: 'r1', typ: 'sperren', muster: 'juuuport.de', geltung: 'alle' }], profile: [{ id: 'standard', kategorien: {} }, profK], listen: lK.quellen, geraete: { kind: { profil: 'kinder' } }, pausen: { global: 0, geraete: {} }, dienste: {} });
+    const hilfe = fK.entscheide({ geraetId: 'kind', name: 'www.juuuport.de' });
+    pruefe('Kinderschutz: Hilfsangebote bleiben erreichbar – auch gegen Sperrregel und Jugendschutz-Liste', hilfe.aktion === 'erlaubt' && hilfe.grund === 'Hilfsangebot' && fK.entscheide({ geraetId: 'kind', name: 'ngl.link' }).aktion === 'geblockt' && fK.entscheide({ geraetId: 'kind', name: 'ngl.link' }).kategorie === 'anonym');
+    const nachts = fK.entscheide({ geraetId: 'kind', name: 'web.whatsapp.com' });
+    jetztK = Date.parse('2026-11-23T12:00:00+01:00'); const mittags = fK.entscheide({ geraetId: 'kind', name: 'web.whatsapp.com' }); jetztK = T;
+    pruefe('Kinderschutz: Ruhezeit Messenger sperrt WhatsApp nachts (über Mitternacht), mittags frei; Pokémon GO bleibt von der Spiele-Ruhezeit ausgenommen', nachts.aktion === 'geblockt' && nachts.grund === 'Ruhezeit' && mittags.aktion === 'erlaubt' && fK.entscheide({ geraetId: 'kind', name: 'pokemongo.com' }).aktion === 'erlaubt' && fK.entscheide({ geraetId: 'kind', name: 'roblox.com' }).grund === 'Ruhezeit' && fK.entscheide({ geraetId: 'anderes', name: 'web.whatsapp.com' }).aktion === 'erlaubt');
+    // Zeitkonto: Sitzung 10:00–10:29 (alle 60 s eine Anfrage) = 30 min → TikTok aufgebraucht; +15 min → wieder frei
+    jetztK = Date.parse('2026-11-23T10:00:00+01:00');
+    for (let i = 0; i < 30; i++) zk.vermerke('kind', fK.limitZiele(profK, fK.dienstVon('tiktok.com')), jetztK + i * 60000);
+    jetztK += 30 * 60000;
+    const leer = fK.entscheide({ geraetId: 'kind', name: 'tiktok.com' });
+    zk.mehr('kind', 'dienst:tiktok', 15);
+    const wieder = fK.entscheide({ geraetId: 'kind', name: 'tiktok.com' });
+    zk.vermerke('kind', ['dienst:tiktok'], jetztK + 20 * 60000);   // Lücke > 5 min: neue Sitzung, nur 1 min
+    pruefe('Kinderschutz: Zeitkonto zählt Sitzungen, Limit sperrt mit Grund „Zeitlimit“, +15 min gibt frei, Lücke > 5 min startet neu', zk.genutztMin('kind', 'dienst:tiktok') === 31 && leer.aktion === 'geblockt' && leer.grund === 'Zeitlimit' && wieder.aktion === 'erlaubt', `${zk.genutztMin('kind', 'dienst:tiktok')} ${leer.grund} ${wieder.aktion}`);
+    jetztK = Date.parse('2026-11-24T08:00:00+01:00');
+    pruefe('Kinderschutz: Zeitkonto beginnt um Mitternacht neu (Zusatzzeit verfällt)', zk.genutztMin('kind', 'dienst:tiktok') === 0 && zk.extraMin('kind', 'dienst:tiktok') === 0);
+    jetztK = T;
+    pruefe('Kinderschutz: sichere Suche – Google (alle Länder), Bing, DuckDuckGo, YouTube moderat; nicht für andere Profile', fK.sicherZiel('kind', 'www.google.de') === 'forcesafesearch.google.com' && fK.sicherZiel('kind', 'google.co.uk') === 'forcesafesearch.google.com' && fK.sicherZiel('kind', 'www.bing.com') === 'strict.bing.com' && fK.sicherZiel('kind', 'duckduckgo.com') === 'safe.duckduckgo.com' && fK.sicherZiel('kind', 'm.youtube.com') === 'restrictmoderate.youtube.com' && !fK.sicherZiel('kind', 'mail.google.com') && !fK.sicherZiel('anderes', 'www.google.de'));
+
+    // DNS-Server: sichere Suche (CNAME + Adressen, HTTPS leer), TTL-Deckel bei Zeitlimit, unterwegs ohne Heimnetz-Namen
+    const upK = { frage: async (anf) => ({ buf: dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: anf.paket.questions, answers: anf.frage.typ === 'A' ? [{ type: 'A', name: anf.frage.name, ttl: 3600, data: anf.frage.name === 'forcesafesearch.google.com' ? '216.239.38.120' : '9.9.9.9' }] : [] }), alterSek: 0, cache: false, anbieter: 'fake' }) };
+    const lokalK = { zustaendig: (nm) => /(^|\.)(lan|arpa|example\.org)$/.test(nm), frage: async () => { throw new Error('darf unterwegs nicht gefragt werden'); } };
+    const recK = new Records({ eintraege: [{ host: 'nas.example.org', ip: '192.168.1.23' }] });
+    const srvK = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter: fK, upstream: upK, lokal: lokalK, records: recK, geraete: { von: (ip) => ({ id: ip === '192.168.1.50' ? 'kind' : `ip:${ip}`, name: ip }) }, zeitkonto: zk });
+    const ks1 = dnsPacket.decode(await srvK.bearbeite(frage('www.google.de'), '192.168.1.50', true));
+    const ks2 = dnsPacket.decode(await srvK.bearbeite(frage('www.google.de', 'HTTPS'), '192.168.1.50', true));
+    const tt = dnsPacket.decode(await srvK.bearbeite(frage('www.tiktok.com'), '192.168.1.50', true));
+    pruefe('DNS: sichere Suche liefert CNAME forcesafesearch.google.com + Adresse, HTTPS-Eintrag leer; Zeitlimit-Dienst mit TTL ≤ 60 s', ks1.answers[0]?.type === 'CNAME' && ks1.answers[0].data === 'forcesafesearch.google.com' && ks1.answers[1]?.data === '216.239.38.120' && ks2.answers.length === 0 && ks2.rcode === 'NOERROR' && tt.answers[0]?.ttl <= 60);
+    const ext = { extern: true, geraet: { id: 'kind', name: 'Kind' } };
+    const e1 = dnsPacket.decode(await srvK.bearbeite(frage('ngl.link'), '203.0.113.7', false, ext));
+    const e2 = dnsPacket.decode(await srvK.bearbeite(frage('nas.example.org'), '203.0.113.7', false, ext));
+    const e3 = dnsPacket.decode(await srvK.bearbeite(frage('drucker.lan'), '203.0.113.7', false, ext));
+    const e4 = dnsPacket.decode(await srvK.bearbeite(frage('ngl.link'), '203.0.113.7', true));
+    pruefe('DNS unterwegs: fremde IP mit Geräte-Kontext wird mit dem Profil des Geräts gefiltert, Heimnetz-Records gehen nicht raus, .lan → NXDOMAIN, ohne Kontext REFUSED', e1.answers[0]?.data === '0.0.0.0' && e2.answers[0]?.data === '9.9.9.9' && e3.rcode === 'NXDOMAIN' && e4.rcode === 'REFUSED');
+
+    // Meldungen: gebündelt, Ruhezeit, nur gewählte Profile, Ersatz reicht weiter, Umgehungsverdacht
+    const eK = new Einstellungen({ verzeichnis: path.join(kd, 'm'), geheimnis: 'k'.repeat(32), env: {} }).laden();
+    eK.aendern((x) => { x.meldungen = { ...x.meldungen, an: true, profile: ['kinder'] }; x.geraete.kind = { profil: 'kinder', name: 'Kind' }; });
+    let ersatz = false;
+    const mel = new Meldungen({ einst: eK, jetzt: () => jetztK, istErsatz: () => ersatz, kategorieName: (k) => ({ anonym: 'Anonyme Chats' }[k] || k), protokoll: () => {} });
+    const blk = (domain) => ({ ts: jetztK, geraet: 'kind', geraetName: 'Kind', profil: 'kinder', aktion: 'geblockt', grund: 'Liste', kategorie: 'anonym', domain });
+    mel.beachte(blk('ngl.link')); mel.beachte(blk('ngl.link')); mel.beachte(blk('tellonym.me'));
+    mel.beachte({ ...blk('ngl.link'), profil: 'standard', geraet: 'papa' });
+    await mel.abschicken('kind|kat:anonym');
+    mel.beachte(blk('ngl.link'));   // in der Ruhezeit
+    pruefe('Meldungen: drei Sperren → EIN Eintrag mit Domains und Anzahl, Ruhezeit unterdrückt den nächsten, anderes Profil meldet nichts, nichts geht nach draußen', mel.verlauf.length === 1 && /3 Versuche/.test(mel.verlauf[0].text) && /ngl\.link \(2×\)/.test(mel.verlauf[0].details) && /tellonym/.test(mel.verlauf[0].details) && /Anonyme Chats/.test(mel.verlauf[0].titel) && mel.verlauf[0].ernst && mel.buendel.size === 0 && mel.unterdrueckt === 1 && !mel.senden && !mel.verlauf[0].handy);
+    ersatz = true; mel.beachte(blk('omegle.com')); const abgeholt = mel.abholen(); ersatz = false;
+    const mel2 = new Meldungen({ einst: eK, jetzt: () => jetztK, protokoll: () => {} });
+    mel2.empfangen({ ereignisse: abgeholt.ereignisse, zuletzt: { kind: jetztK } });
+    pruefe('Meldungen: Ersatz sammelt statt zu senden, Haupt übernimmt Ereignisse und „zuletzt gesehen“', abgeholt.ereignisse.length === 1 && mel2.buendel.has('kind|kat:anonym') && mel2.zuletzt.get('kind') === jetztK);
+    const st = jetztK;
+    const melS = new Meldungen({ einst: eK, jetzt: () => st, protokoll: () => {},
+      geraete: { stand: st, jeMac: new Map([['kind', { gesehen: st, ip: '192.168.1.50', verbunden: st - 3 * 3600000, name: 'Kind' }]]) }, filter: { profilVon: (g) => ({ id: g === 'kind' ? 'kinder' : 'standard' }) } });
+    melS.zuletzt.set('kind', st - 45 * 60000);
+    const verdacht = melS.pruefeStille(), nochmal = melS.pruefeStille();
+    pruefe('Meldungen: Umgehungsverdacht, wenn das Gerät im Netz ist, aber seit 45 min nicht fragt – nur einmal je 6 h', verdacht.join() === 'kind' && nochmal.length === 0 && /fragt FAH-Adblock nicht mehr/.test(melS.verlauf[0]?.titel));
+
+    // ACME: Ablauf gegen einen nachgebauten Server (Signaturen werden geprüft), CSR
+    const kontoJwk = {}; let bestellt = 0;
+    const fakeAcme = async (url, o = {}) => {
+      const r = (status, json, kopf = {}) => ({ status, json, text: typeof json === 'string' ? json : JSON.stringify(json), kopf: { 'replay-nonce': `n${Math.random()}`, ...kopf } });
+      if (url === 'https://acme.test/dir') return r(200, { newNonce: 'https://acme.test/nonce', newAccount: 'https://acme.test/acct', newOrder: 'https://acme.test/order' });
+      if (url === 'https://acme.test/nonce') return r(200, '');
+      const body = JSON.parse(o.daten), geschuetzt = JSON.parse(Buffer.from(body.protected, 'base64url'));
+      if (geschuetzt.jwk) Object.assign(kontoJwk, geschuetzt.jwk);
+      const echt = require('node:crypto').verify('sha256', Buffer.from(`${body.protected}.${body.payload}`), { key: require('node:crypto').createPublicKey({ key: kontoJwk, format: 'jwk' }), dsaEncoding: 'ieee-p1363' }, Buffer.from(body.signature, 'base64url'));
+      if (!echt || geschuetzt.url !== url) return r(400, { detail: 'Signatur falsch' });
+      if (url === 'https://acme.test/acct') return r(201, { status: 'valid' }, { location: 'https://acme.test/acct/1' });
+      if (url === 'https://acme.test/order') { bestellt++; return r(201, { status: 'pending', authorizations: ['https://acme.test/authz'], finalize: 'https://acme.test/fin' }, { location: 'https://acme.test/order/1' }); }
+      if (url === 'https://acme.test/authz') return r(200, { status: fakeAcme.geprueft ? 'valid' : 'pending', challenges: [{ type: 'http-01', url: 'https://acme.test/chall', token: 'tok123456789' }] });
+      if (url === 'https://acme.test/chall') { fakeAcme.geprueft = acmeK.antwort('tok123456789') === `tok123456789.${acmeK.daumen()}`; return r(200, {}); }
+      if (url === 'https://acme.test/fin') { fakeAcme.csr = JSON.parse(Buffer.from(body.payload, 'base64url')).csr; return r(200, { status: 'processing' }); }
+      if (url === 'https://acme.test/order/1') return r(200, { status: 'valid', certificate: 'https://acme.test/cert' });
+      if (url === 'https://acme.test/cert') return r(200, fakeAcme.kette);
+      return r(404, {});
+    };
+    const sk = require('node:child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', path.join(kd, 'k.pem'), '-out', path.join(kd, 'c.pem'), '-days', '90', '-subj', '/CN=dns-kind1234.example.org', '-addext', 'subjectAltName=DNS:dns-kind1234.example.org'], { stdio: 'ignore' });
+    const mitOpenssl = sk.status === 0;
+    fakeAcme.kette = mitOpenssl ? fs.readFileSync(path.join(kd, 'c.pem'), 'utf8') : '';
+    const acmeK = new Acme({ verzeichnis: kd, verzeichnisUrl: 'https://acme.test/dir', anfrager: fakeAcme, warten: async () => {}, protokoll: () => {} });
+    if (mitOpenssl) {
+      const z = await acmeK.zertifikat('dns-kind1234.example.org');
+      pruefe('ACME: Konto, Bestellung, HTTP-Prüfung (Schlüsselautorisierung), CSR, Zertifikat – alle Anfragen korrekt signiert', z.kette.includes('BEGIN CERTIFICATE') && z.bis > Date.now() && fakeAcme.geprueft && !!fakeAcme.csr && bestellt === 1 && acmeK.herausforderungen.size === 0);
+    } else pruefe('ACME: CSR ist DER und enthält den Namen (ohne openssl kein Ablauf-Test)', csr('dns-x.example.org', require('node:crypto').generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey).includes(Buffer.from('dns-x.example.org')));
+
+    // Web: Vorlagen, Hilfe fest, Kinderschutz-API, unterwegs (Gerätename nur DoH/ACME/Profil), DoT
+    const eW = new Einstellungen({ verzeichnis: path.join(kd, 'w'), geheimnis: 'w'.repeat(32), env: {} }).laden();
+    const fW = new Filter({ listen: lK, zeitkonto: zk }); const kfg = () => fW.konfigurieren({ regeln: eW.werte.regeln, profile: eW.werte.profile, listen: lK.quellen, geraete: eW.werte.geraete, pausen: eW.werte.pausen, dienste: eW.werte.dienste }); kfg(); eW.beobachten(kfg);
+    const srvW = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter: fW, upstream: upK, lokal: lokalK, records: recK, geraete: { von: (ip) => ({ id: `ip:${ip}`, name: ip }) }, zeitkonto: zk });
+    const acmeW = new Acme({ verzeichnis: path.join(kd, 'w'), verzeichnisUrl: 'https://acme.test/dir', anfrager: fakeAcme, warten: async () => {}, protokoll: () => {} });
+    const unt = new Unterwegs({ einst: eW, dns: srvW, verzeichnis: path.join(kd, 'w'), acme: acmeW, bind: '127.0.0.1', port: 0, nameVon: () => 'Kind', pruefer: async () => null, protokoll: () => {} });
+    const melW = new Meldungen({ einst: eW, protokoll: () => {} });
+    const authK = new Auth({ verzeichnis: path.join(kd, 'w'), geheimnis: 'w'.repeat(32) });
+    const webK = webServer({ auth: authK, einst: eW, listen: lK, filter: fW, upstream: upK, dns: srvW, geraete: { status: () => ({ unifi: {} }), unifiLesen: async () => 0, iconVon: () => null, nameVon: () => '' }, protokoll: prot2, live: new Set(), version: 'probe', statisch: path.join(tmp, 'pub'), daten: path.join(kd, 'w'), zeitkonto: zk, meldungen: melW, unterwegs: unt, acme: acmeW });
+    await new Promise((r) => webK.listen(0, '127.0.0.1', r));
+    const BK = `http://127.0.0.1:${webK.address().port}`;
+    const lgK = await fetch(BK + '/api/anmelden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'admin', passwort: 'admin' }) });
+    const ck = lgK.headers.get('set-cookie').split(';')[0], csK = (await (await fetch(BK + '/api/ich', { headers: { cookie: ck } })).json()).csrf;
+    const sK = (p, daten, m = 'POST') => fetch(BK + p, { method: m, headers: { cookie: ck, 'x-csrf': csK, 'Content-Type': 'application/json' }, body: JSON.stringify(daten) });
+    const neuP = await (await sK('/api/profile', { vorlage: 'klasse5' })).json();
+    const hilfeAus = await sK('/api/dienste/juuuport', { modus: 'sperren', geltung: 'alle' }, 'PUT');
+    const ruheFalsch = await sK(`/api/profile/${neuP.id}`, { ruhezeiten: { hilfe: [{ tage: [1], von: '20:00', bis: '07:00' }] } }, 'PUT');
+    const limitFalsch = await sK(`/api/profile/${neuP.id}`, { limits: { 'dienst:juuuport': 30 } }, 'PUT');
+    const limitOk = await sK(`/api/profile/${neuP.id}`, { limits: { 'dienst:tiktok': 45 }, sicher: { suche: true, youtube: 'streng' }, ruhezeiten: { messenger: [{ tage: [1, 2, 3, 4, 5], von: '21:00', bis: '06:30' }] } }, 'PUT');
+    const pW = eW.werte.profile.find((p) => p.id === neuP.id);
+    pruefe('Web: Profil aus Altersvorlage, Hilfe nicht sperrbar, Ruhezeit/Zeitlimit für Hilfe abgelehnt, gültige Werte gespeichert', neuP.limits?.['rubrik:spiele'] === 90 && neuP.dienste?.tiktok === 'sperren' && neuP.sicher?.youtube === 'moderat' && hilfeAus.status === 400 && ruheFalsch.status === 400 && limitFalsch.status === 400 && limitOk.status === 200 && pW.limits['dienst:tiktok'] === 45 && pW.sicher.youtube === 'streng' && pW.ruhezeiten.messenger[0].tage.length === 5);
+    eW.aendern((x) => { x.geraete.kind = { profil: neuP.id, name: 'Kind' }; });
+    const mehr = await (await sK('/api/zeitkonto/mehr', { geraet: 'kind', ziel: 'dienst:tiktok', minuten: 30 })).json();
+    const ksApi = await (await fetch(BK + '/api/kinderschutz', { headers: { cookie: ck } })).json();
+    const melOeff = await (await sK('/api/kinderschutz/meldungen', { an: true, stilleMin: 45, url: 'https://fremd.example.org', thema: 'egal-egal-egal' }, 'PUT')).json();
+    pruefe('Web: Kinderschutz-API – Zeitkonto +30 min, Hilfsangebote gelistet, Meldungen ohne Fremddienst (keine Adresse/Thema gespeichert)', mehr.extra === 30 && ksApi.hilfe.some((h) => h.id === 'juuuport') && ksApi.zeitkonten.some((g) => g.id === 'kind' && g.ziele.some((z) => z.ziel === 'dienst:tiktok' && z.extra === 30)) && melOeff.an === true && melOeff.stilleMin === 45 && !('url' in melOeff) && !('thema' in melOeff) && ksApi.meldungen.an === true);
+    await sK('/api/unterwegs', { an: true, basis: 'example.org' }, 'PUT');
+    const ug = await (await sK('/api/unterwegs/geraete/kind', { an: true }, 'PUT')).json();
+    const gU = ug.geraete.find((g) => g.id === 'kind');
+    const hostU = gU.host, port = webK.address().port;
+    const mitHost = (pfad, o = {}) => new Promise((ok) => { const rq = http.request({ host: '127.0.0.1', port, path: pfad, method: o.method || 'GET', headers: { host: hostU, ...(o.headers || {}) } }, (res) => { const t = []; res.on('data', (d) => t.push(d)); res.on('end', () => ok({ status: res.statusCode, typ: res.headers['content-type'], buf: Buffer.concat(t) })); }); rq.end(o.body); });
+    const ui = await mitHost('/'), api = await mitHost('/api/uebersicht'), anm = await mitHost('/api/anmelden', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"admin","passwort":"admin"}' });
+    const dohQ = Buffer.from(frage('ngl.link', 'A', { id: 0 })).toString('base64url');
+    const doh = await mitHost(`/dns-query/${gU.geheim}?dns=${dohQ}`), dohFalsch = await mitHost(`/dns-query/${'x'.repeat(32)}?dns=${dohQ}`);
+    const dohPost = await mitHost(`/dns-query/${gU.geheim}`, { method: 'POST', headers: { 'content-type': 'application/dns-message' }, body: Buffer.from(frage('web.whatsapp.com', 'A', { id: 0 })) });
+    const prof = await mitHost(`/unterwegs/${gU.geheim}/profil.mobileconfig`);
+    acmeW.herausforderungen.set('probetoken123', 'probetoken123.abc');
+    const ch = await mitHost('/.well-known/acme-challenge/probetoken123');
+    pruefe('Unterwegs: unter dem Gerätenamen keine Oberfläche, API oder Anmeldung (404); DoH GET/POST filtert mit dem Profil des Geräts; falsches Geheimnis 404', hostU === 'dns-kind.example.org' && ui.status === 404 && api.status === 404 && anm.status === 404 && doh.status === 200 && doh.typ === 'application/dns-message' && dnsPacket.decode(doh.buf).answers[0]?.data === '0.0.0.0' && dohFalsch.status === 404 && dohPost.status === 200 && dnsPacket.decode(dohPost.buf).answers.length > 0);
+    const mitHost2 = (h, pfad, m = 'GET') => new Promise((ok) => { const rq = http.request({ host: '127.0.0.1', port, path: pfad, method: m, headers: { host: h } }, (res) => { res.resume(); res.on('end', () => ok(res.statusCode)); }); rq.end(); });
+    const punkt = await mitHost2(`${hostU}.`, '/api/uebersicht'), mitPort = await mitHost2(`${hostU.toUpperCase()}:443`, '/'), alteBasis = await mitHost2('dns-alt12345.alte-basis.example', '/api/health'), tiefer = await mitHost2(`dns-a.b.${hostU}`, '/');
+    const proto = await sK('/api/unterwegs/geraete/__proto__', { an: false }, 'PUT'), proto2 = await sK('/api/geraete/__proto__', { name: 'x' }, 'PUT');
+    pruefe('Sicherheit: Oberfläche/API nie unter einem dns-Namen (Punkt am Ende, Port, Großschreibung, alte Basisdomain, tiefere Namen); __proto__ als ID → 400', punkt === 404 && mitPort === 404 && alteBasis === 404 && tiefer === 404 && proto.status === 400 && proto2.status === 400 && ({}).an === undefined && ({}).name === undefined);
+    // Hilfsangebote nicht im Protokoll; unterwegs feste TTL statt gealterter (kein Ausspähen des Zwischenspeichers), keine öffentliche IP im Protokoll
+    const vorher = [];
+    srvK.on('anfrage', (x) => vorher.push(x));
+    await srvK.bearbeite(frage('www.juuuport.de'), '192.168.1.50', true);
+    const upAlt = { frage: async (anf) => ({ buf: dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: anf.paket.questions, answers: [{ type: 'A', name: anf.frage.name, ttl: 300, data: '9.9.9.9' }] }), alterSek: 250, cache: true, anbieter: 'fake' }) };
+    const srvA = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter: fK, upstream: upAlt, lokal: lokalK, geraete: { von: (ip) => ({ id: `ip:${ip}`, name: ip }) } });
+    const imLog = []; srvA.on('anfrage', (x) => imLog.push(x));
+    const ttlExt = dnsPacket.decode(await srvA.bearbeite(frage('example.com'), '203.0.113.9', false, ext)).answers[0]?.ttl, ttlInt = dnsPacket.decode(await srvA.bearbeite(frage('example.com'), '192.168.1.9', true)).answers[0]?.ttl;
+    pruefe('Datenschutz: Hilfsangebot ohne Protokollzeile; unterwegs ungealterte TTL und „unterwegs“ statt öffentlicher IP', !vorher.some((x) => x.domain === 'www.juuuport.de') && ttlExt === 300 && ttlInt === 50 && imLog[0]?.ip === 'unterwegs');
+    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
+    if (mitOpenssl) {
+      unt.speichereZertifikat(hostU, { schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8'), kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), bis: Date.now() + 80 * 86400000 });
+      unt.dotPruefen(); await new Promise((r) => setTimeout(r, 200));
+      const dotPort = unt.server.address().port;
+      const dotFrage = (servername, name) => new Promise((ok) => {
+        const tls = require('node:tls'); const s = tls.connect({ host: '127.0.0.1', port: dotPort, servername, rejectUnauthorized: false }, () => { const q = Buffer.from(frage(name)); const k = Buffer.alloc(2); k.writeUInt16BE(q.length); s.write(Buffer.concat([k, q])); });
+        let p = Buffer.alloc(0); s.on('data', (d) => { p = Buffer.concat([p, d]); if (p.length >= 2 && p.length >= 2 + p.readUInt16BE(0)) { ok(dnsPacket.decode(p.subarray(2))); s.destroy(); } });
+        s.on('error', () => ok(null)); setTimeout(() => { s.destroy(); ok(null); }, 3000);
+      });
+      const dot = await dotFrage(hostU, 'ngl.link'), dotFremd = await dotFrage('dns-fremd123.example.org', 'ngl.link');
+      pruefe('Unterwegs: DNS-over-TLS erkennt das Gerät am Namen (SNI) und filtert mit dessen Profil; fremder Name → kein Handshake', dot?.answers?.[0]?.data === '0.0.0.0' && dotFremd === null);
+      unt.stoppen();
+    // ── Freigaben automatisch: FAH-Proxy (aktive Instanz), UCG-Portfreigabe, Übergabe an den Ersatz ──
+    {
+      const { FahProxy } = require('../src/fahproxy.js');
+      const fakeProxy = (aktiv) => {
+        const z = { aktiv, konten: [{ name: 'admin', pw: 'adminpw', rolle: 'admin' }], domains: [{ id: 'd1', domain: 'nas.example.org', ziel: 'http://192.168.1.23:5000', schutz: 'heimnetz', notiz: '' }, { id: 'd2', domain: 'dns-alt.example.org', ziel: 'http://x:8053', schutz: 'oeffentlich', notiz: 'FAH-Adblock unterwegs: Altgerät' }], sitzungen: new Map(), schreib: 0 };
+        z.anfragen = 0;
+        z.srv = require('node:https').createServer({ key: fs.readFileSync(path.join(kd, 'k.pem')), cert: fs.readFileSync(path.join(kd, 'c.pem')) }, (req, res) => {
+          z.anfragen++;
+          let t = ''; req.on('data', (d) => { t += d; }); req.on('end', () => {
+            const b = t ? JSON.parse(t) : {}, url = new URL(req.url, 'http://x'), kek = Object.fromEntries(String(req.headers.cookie || '').split(/;\s*/).filter(Boolean).map((c) => c.split('=')));
+            const send = (st, j, kopf = {}) => { res.writeHead(st, { 'Content-Type': 'application/json', ...kopf }); res.end(JSON.stringify(j)); };
+            if (url.pathname === '/api/anmelden') { const k = z.konten.find((x) => x.name === b.name && x.pw === b.passwort); if (!k) return send(401, { ok: false, fehler: { meldung: 'falsch' } }); const sid = `s${Math.random()}`, csrf = `c${Math.random()}`; z.sitzungen.set(sid, { csrf, name: k.name, rolle: k.rolle }); return send(200, { ok: true, ergebnis: { name: k.name } }, { 'Set-Cookie': [`fp_sitzung=${sid}; HttpOnly`, `fp_csrf=${csrf}`] }); }
+            const sitz = z.sitzungen.get(kek.fp_sitzung); if (!sitz) return send(401, { ok: false, fehler: { meldung: 'Bitte anmelden' } });
+            const csrf = sitz.csrf;
+            const dienstPfad = url.pathname.startsWith('/api/dienst/') || url.pathname === '/api/abmelden';
+            if (sitz.rolle !== 'admin' && !(sitz.rolle === 'dienst' && dienstPfad)) return send(403, { ok: false, fehler: { code: 'E_RECHTE', meldung: 'Keine Berechtigung' } });
+            z.zugriffe = (z.zugriffe || []).concat(`${sitz.rolle} ${req.method} ${url.pathname}`);
+            if (req.method !== 'GET' && req.headers['x-fp-csrf'] !== csrf) return send(403, { ok: false, fehler: { meldung: 'CSRF' } });
+            if (req.method !== 'GET' && !z.aktiv && url.pathname !== '/api/abmelden') return send(403, { ok: false, fehler: { meldung: 'nicht aktiv' } });
+            if (req.method !== 'GET') z.schreib++;
+            if (url.pathname === '/api/uebersicht') return send(200, { ok: true, ergebnis: { aktiv: z.aktiv, domains: z.domains } });
+            if (url.pathname === '/api/konten' && req.method === 'GET') return send(200, { ok: true, ergebnis: z.konten.map((k) => ({ name: k.name })) });
+            if (url.pathname === '/api/konten' && req.method === 'POST') { z.konten.push({ name: b.name, pw: b.passwort, rolle: b.rolle }); return send(200, { ok: true, ergebnis: {} }); }
+            const eigen = (d) => d.domain.startsWith('dns-') && (d.rubrik === 'AdBlock DNS Domains' || String(d.notiz || '').startsWith('FAH-Adblock unterwegs'));
+            if (url.pathname === '/api/dienst/dns' && req.method === 'GET') return send(200, { ok: true, ergebnis: { aktiv: z.aktiv, domains: z.domains.filter(eigen) } });
+            if (url.pathname === '/api/dienst/dns' && req.method === 'PUT') {
+              const r = { angelegt: [], geaendert: [], geloescht: [], fremd: [] }, soll = new Map(b.soll.map((x) => [x.domain, x.name]));
+              for (const d of [...z.domains]) { if (!eigen(d) || !d.domain.endsWith(`.${b.basis}`)) continue; if (!soll.has(d.domain)) { z.domains = z.domains.filter((x) => x !== d); r.geloescht.push(d.domain); } else if (d.ziel !== b.ziel || d.rubrik !== 'AdBlock DNS Domains') { Object.assign(d, { ziel: b.ziel, rubrik: 'AdBlock DNS Domains', schutz: 'oeffentlich' }); r.geaendert.push(d.domain); } }
+              for (const [dom, name] of soll) { const d = z.domains.find((x) => x.domain === dom); if (d && !eigen(d)) r.fremd.push(dom); else if (!d) { z.domains.push({ id: `d${z.domains.length + 9}`, domain: dom, ziel: b.ziel, schutz: 'oeffentlich', rubrik: 'AdBlock DNS Domains', notiz: `FAH-Adblock unterwegs: ${name}` }); r.angelegt.push(dom); } }
+              return send(200, { ok: true, ergebnis: r });
+            }
+            if (url.pathname === '/api/dienst/zertifikate') return send(200, { ok: true, ergebnis: { zertifikate: z.domains.filter(eigen).map((d) => ({ domain: d.domain, kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8') })) } });
+            if (url.pathname === '/api/dienst/herabstufen') { const k = z.konten.find((x) => x.name === sitz.name); k.rolle = 'dienst'; return send(200, { ok: true, ergebnis: { rolle: 'dienst' } }); }
+            if (url.pathname === '/api/dienst/konto' && req.method === 'DELETE') { z.konten = z.konten.filter((k) => k.name !== sitz.name); return send(200, { ok: true, ergebnis: {} }); }
+            if (url.pathname.startsWith('/api/konten/') && req.method === 'DELETE') { z.konten = z.konten.filter((k) => k.name !== url.pathname.slice(12)); return send(200, { ok: true, ergebnis: {} }); }
+            if (url.pathname === '/api/domains' && req.method === 'POST') { z.domains.push({ id: `d${z.domains.length + 9}`, ...b }); return send(200, { ok: true, ergebnis: {} }); }
+            const dm = /^\/api\/domains\/(.+)$/.exec(url.pathname);
+            if (dm && req.method === 'DELETE') { z.domains = z.domains.filter((d) => d.id !== dm[1]); return send(200, { ok: true, ergebnis: {} }); }
+            if (dm && req.method === 'PUT') { z.domains = z.domains.map((d) => (d.id === dm[1] ? { ...d, ...b } : d)); return send(200, { ok: true, ergebnis: {} }); }
+            if (url.pathname === '/api/abmelden') return send(200, { ok: true, ergebnis: {} });
+            send(404, { ok: false, fehler: { meldung: 'unbekannt' } });
+          });
+        });
+        return z;
+      };
+      const PA = fakeProxy(false), PB = fakeProxy(true);
+      for (const p of [PA, PB]) await new Promise((r) => p.srv.listen(0, '127.0.0.1', r));
+      const uA = `https://127.0.0.1:${PA.srv.address().port}`, uB = `https://127.0.0.1:${PB.srv.address().port}`;
+      const fp = new FahProxy({ verzeichnis: path.join(kd, 'w'), geheimnis: 'w'.repeat(32), protokoll: () => {} });
+      const falsch = await fp.koppeln({ urls: [uA, uB], name: 'admin', passwort: 'nein' }).then(() => 'ok', (e) => e.message);
+      await fp.koppeln({ urls: [uA, uB], name: 'admin', passwort: 'adminpw' });
+      const konto = PB.konten.find((k) => k.name === 'fah-adblock');
+      pruefe('FAH-Proxy koppeln: falsches Admin-Passwort scheitert; eigenes Konto „fah-adblock“ mit Rolle DIENST an der AKTIVEN Instanz, Passwort verschlüsselt (0600), Admin-Passwort nicht gespeichert', /falsch|aktive/.test(falsch) && konto && konto.rolle === 'dienst' && konto.pw.length >= 30 && !PA.konten.some((k) => k.name === 'fah-adblock') && !fs.readFileSync(path.join(kd, 'w', 'fah-proxy.json'), 'utf8').includes(konto.pw) && !fs.readFileSync(path.join(kd, 'w', 'fah-proxy.json'), 'utf8').includes('adminpw') && (fs.statSync(path.join(kd, 'w', 'fah-proxy.json')).mode & 0o777) === 0o600);
+      PA.konten.push({ ...konto });   // FAH-Proxy spiegelt Konten zur anderen Instanz
+      const { Sitzung } = require('../src/fahproxy.js');
+      const vorPin = PB.anfragen, pinFehler = await new Sitzung(uB, { abdruck: 'AA:BB' }).anmelden('fah-adblock', konto.pw).then(() => 'gesendet', (e) => e.message);
+      const httpAbgelehnt = await fp.koppeln({ urls: ['http://127.0.0.1:1'], name: 'admin', passwort: 'x' }).then(() => 'ok', (e) => e.message);
+      pruefe('FAH-Proxy: fremdes Zertifikat → Abbruch VOR dem Senden (keine Anfrage kommt an), nur https-Adressen', /geändert/.test(pinFehler) && PB.anfragen === vorPin && /nur https/.test(httpAbgelehnt));
+      // UCG nachgebaut (https, selbstsigniert)
+      const ucg = { liste: [{ _id: 'p1', name: 'FAH-Proxy HTTPS', enabled: true, dst_port: '443', fwd: '192.168.1.29', fwd_port: '28443', proto: 'tcp', pfwd_interface: 'wan', destination_ip: 'any', destination_ips: [] }], aufrufe: [] };
+      const ucgSrv = require('node:https').createServer({ key: fs.readFileSync(path.join(kd, 'k.pem')), cert: fs.readFileSync(path.join(kd, 'c.pem')) }, (req, res) => {
+        let t = ''; req.on('data', (d) => { t += d; }); req.on('end', () => {
+          ucg.aufrufe.push(req.method); const id = req.url.split('/portforward/')[1];
+          if (req.headers['x-api-key'] !== 'ucgschluessel123456') { res.writeHead(401); return res.end('{}'); }
+          if (req.method === 'POST') ucg.liste.push({ _id: `p${ucg.liste.length + 5}`, ...JSON.parse(t) });
+          if (req.method === 'PUT') ucg.liste = ucg.liste.map((p) => (p._id === id ? { ...p, ...JSON.parse(t) } : p));
+          if (req.method === 'DELETE') ucg.liste = ucg.liste.filter((p) => p._id !== id);
+          res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ data: ucg.liste }));
+        });
+      });
+      await new Promise((r) => ucgSrv.listen(0, '127.0.0.1', r));
+      const unifiZ = () => ({ url: `https://127.0.0.1:${ucgSrv.address().port}`, schluessel: 'ucgschluessel123456' });
+      const untH = new Unterwegs({ einst: eW, dns: srvW, verzeichnis: path.join(kd, 'w'), acme: null, bind: '192.168.1.29', port: 853, zielUrl: () => 'http://192.168.1.29:8053', proxy: fp, unifi: unifiZ, nameVon: () => 'Kind', protokoll: () => {} });
+      await untH.freigabenPflegen();
+      const dnsEintrag = PB.domains.find((d) => d.domain === hostU), pf = ucg.liste.find((p) => p.name === 'FAH-Adblock DoT (unterwegs)');
+      const nurDienst = (PB.zugriffe || []).filter((x) => x.startsWith('dienst ')).every((x) => / \/api\/(dienst\/|abmelden)/.test(x));
+      pruefe('Freigaben: FAH-Proxy-Eintrag des Geräts in der Gruppe „AdBlock DNS Domains“ an der aktiven Instanz (Ziel = diese Instanz, öffentlich), Altgerät gelöscht, fremde Domain unberührt, Dienst-Konto nutzt nur die Dienst-Schnittstelle; UCG-Portfreigabe 853 → Haupt', dnsEintrag?.ziel === 'http://192.168.1.29:8053' && dnsEintrag.schutz === 'oeffentlich' && dnsEintrag.rubrik === 'AdBlock DNS Domains' && nurDienst && !PB.domains.some((d) => d.domain === 'dns-alt.example.org') && PB.domains.some((d) => d.domain === 'nas.example.org') && PA.schreib === 0 && pf?.fwd === '192.168.1.29' && pf.fwd_port === '853' && pf.proto === 'tcp' && untH.freigabe.proxy.ok && untH.freigabe.port.ok);
+      await untH.zertifikateVomProxy();
+      pruefe('Zertifikat kommt von FAH-Proxy (kein eigenes ACME – je Name nur EIN Zertifikat), nur für eigene Gerätenamen', untH.zert.has(hostU) && untH.zert.size === 1 && !untH.zustand.get(hostU)?.fehler);
+      const vorher = ucg.aufrufe.length; await untH.freigabenPflegen();
+      PA.aktiv = true; PB.aktiv = false; PA.domains = JSON.parse(JSON.stringify(PB.domains));   // FAH-Proxy-Failover: NAS übernimmt
+      eW.aendern((x) => { delete x.unterwegs.geraete.kind; });
+      await untH.freigabenPflegen();
+      pruefe('Freigaben: zweiter Lauf ändert nichts an der UCG; nach FAH-Proxy-Failover schreibt es an die neue aktive Instanz – gelöschtes Gerät verschwindet dort, ohne Gerät auch die Portfreigabe', ucg.aufrufe.slice(vorher, vorher + 1).join() === 'GET' && !PA.domains.some((d) => d.domain === hostU) && !ucg.liste.some((p) => p.name === 'FAH-Adblock DoT (unterwegs)') && ucg.liste.some((p) => p.name === 'FAH-Proxy HTTPS'));
+      eW.aendern((x) => { x.unterwegs.geraete.kind = { kennung: 'dns-kind', geheim: gU.geheim, an: true }; });
+      // Übergabe an den Ersatz und Übernahme bei Ausfall des Haupts
+      const code = 'kopplungscode-test-1234567890';
+      untH.speichereZertifikat(hostU, { schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8'), kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), bis: Date.now() + 80 * 86400000 });
+      let paket = null;
+      const ed = path.join(kd, 'ersatz'); fs.mkdirSync(ed, { recursive: true });
+      const fpE = new FahProxy({ verzeichnis: ed, geheimnis: 'e'.repeat(32), protokoll: () => {} });
+      let hauptZuletzt = Date.now();
+      const untE = new Unterwegs({ einst: eW, dns: srvW, verzeichnis: ed, acme: null, istErsatz: () => true, hauptZuletzt: () => hauptZuletzt, bind: '192.168.1.23', port: 853, zielUrl: () => 'http://192.168.1.23:8053', proxy: fpE, unifi: unifiZ, nameVon: () => 'Kind', protokoll: () => {} });
+      paket = untH.paketFuerErsatz(code, null, untE.ersatzSchluessel());
+      const ohneSchluessel = untH.paketFuerErsatz(code, null, null);
+      const uebernommen1 = untE.paketUebernehmen(paket, code), zweimal = untH.paketFuerErsatz(code, untE.paketHash, untE.ersatzSchluessel());
+      let falscherCode = false; try { untE.paketHash = null; const p2 = untH.paketFuerErsatz(code, null, untE.ersatzSchluessel()); untE.paketUebernehmen(p2, 'falsch'); } catch (e) { falscherCode = true; }
+      let alterSchluessel = false; try { untE.paketHash = null; untE.ersatzSchluessel(); untE.paketUebernehmen(paket, code); } catch (e) { alterSchluessel = true; }
+      const vorAusfall = await untE.freigabenPflegen().then(() => PA.domains.find((d) => d.domain === hostU)?.ziel || 'keins');
+      hauptZuletzt = Date.now() - 7 * 60000;
+      await untE.freigabenPflegen();
+      pruefe('Failover: Ersatz bekommt Zertifikat und FAH-Proxy-Zugang verschlüsselt (unveränderte Übergabe nur als Prüfsumme, falscher Code scheitert); übernimmt erst nach 6 min Ausfall – dann zeigen FAH-Proxy-Eintrag und Portfreigabe auf den Ersatz', uebernommen1 && !ohneSchluessel.daten && untE.zert.has(hostU) && fpE.gekoppelt() && fpE.passwort() === konto.pw && !zweimal.daten && falscherCode && alterSchluessel && vorAusfall === 'keins' && PA.domains.find((d) => d.domain === hostU)?.ziel === 'http://192.168.1.23:8053' && ucg.liste.find((p) => p.name === 'FAH-Adblock DoT (unterwegs)')?.fwd === '192.168.1.23' && untE.dotSoll());
+      await untH.freigabenPflegen();
+      pruefe('Failover zurück: der Haupt holt FAH-Proxy-Eintrag und Portfreigabe mit seiner nächsten Pflege zurück', PA.domains.find((d) => d.domain === hostU)?.ziel === 'http://192.168.1.29:8053' && ucg.liste.find((p) => p.name === 'FAH-Adblock DoT (unterwegs)')?.fwd === '192.168.1.29');
+      // Benachrichtigungen (Push-Schlüssel, Abos, ntfy) reisen im selben verschlüsselten Paket zum Ersatz
+      const bnH = new Benachrichtigung({ verzeichnis: kd, geheimnis: 'h'.repeat(32), istErsatz: () => false, protokoll: () => {} });
+      const bnE = new Benachrichtigung({ verzeichnis: ed, geheimnis: 'e'.repeat(32), istErsatz: () => true, protokoll: () => {} });
+      const uaT = nodeCrypto.createECDH('prime256v1'); uaT.generateKeys();
+      bnH.ntfySetzen({ thema: 'fah-testthema-123456', schluessel: 'tk_testschluessel1' });
+      bnH.aboHinzufuegen({ abo: { endpoint: 'https://web.push.apple.com/QWERTY123', keys: { p256dh: uaT.getPublicKey().toString('base64url'), auth: nodeCrypto.randomBytes(16).toString('base64url') } }, name: 'iPhone', sub: 'https://adblock.example.org' });
+      untH.zusatz = { geben: () => bnH.fuerErsatz(), nehmen: (x) => bnH.vomHaupt(x) };
+      untE.zusatz = { geben: () => bnE.fuerErsatz(), nehmen: (x) => bnE.vomHaupt(x) };
+      const bnVorher = bnE.oeffentlicherSchluessel();
+      untE.paketHash = null; untE.paketUebernehmen(untH.paketFuerErsatz(code, null, untE.ersatzSchluessel()), code);
+      const stE = bnE.status(), roh = fs.readFileSync(path.join(ed, 'benachrichtigung.json'), 'utf8');
+      pruefe('Failover Benachrichtigungen: Ersatz bekommt Push-Schlüssel des Haupt, Abos und ntfy samt Zugangsschlüssel (vorher keinen eigenen Schlüssel; auf der Platte verschlüsselt)', bnVorher === null && bnE.oeffentlicherSchluessel() === bnH.oeffentlicherSchluessel() && stE.push.abos.length === 1 && stE.ntfy.thema === 'fah-testthema-123456' && stE.ntfy.schluesselGesetzt && stE.vomHaupt && !roh.includes('tk_testschluessel1') && !roh.includes(bnH.fuerErsatz().vapid.d), JSON.stringify(stE).slice(0, 200));
+      // Pfad-Ausbruch über einen gefälschten Namen; Haupt „gesehen“ auch bei abgelehntem Code
+      let ausbruch = false; try { untE.dateien('dns-x./../../sperrseite-ca'); } catch (e) { ausbruch = true; }
+      const spE = new Spiegel({ verzeichnis: ed, einst: eW, geheimnis: 'e'.repeat(32), version: 'probe', anwenden: () => {}, holen: async () => { throw Object.assign(new Error('Der Haupt lehnt den Kopplungscode ab'), { antwort: true }); } });
+      spE.z = { rolle: 'ersatz', haupt_url: 'http://127.0.0.1:1', code: verschluesseln('x', 'e'.repeat(32)), letzter_abgleich: Date.now() - 3600000 };
+      await spE.abgleichen(); spE.stoppen();
+      pruefe('Sicherheit: Gerätename mit „..“ wird nie zum Dateipfad; Haupt antwortet (Code abgelehnt) → gilt als erreichbar, der Ersatz übernimmt nicht', ausbruch && Date.now() - spE.hauptZuletzt() < 5000);
+      eW.aendern((x) => { x.unterwegs.kurznamen = 0; x.unterwegs.geraete['aa:bb:cc:00:00:01'] = { kennung: 'dns-rrhp6y35co5wxeax', geheim: 'g'.repeat(32), an: true }; x.unterwegs.geraete['aa:bb:cc:00:00:02'] = { kennung: 'dns-fairphone', geheim: 'h'.repeat(32), an: true }; x.geraete['aa:bb:cc:00:00:01'] = { name: 'Gast Smartphone' }; });
+      const umgestellt = untH.kurznamenUmstellen(), zweimal2 = untH.kurznamenUmstellen();
+      pruefe('Unterwegs: alte Zufallsnamen einmalig auf kurze Namen umgestellt (dns-Gast-smartphone), eigene kurze Namen bleiben', umgestellt === 1 && zweimal2 === 0 && eW.werte.unterwegs.geraete['aa:bb:cc:00:00:01'].kennung === 'dns-Gast-smartphone' && eW.werte.unterwegs.geraete['aa:bb:cc:00:00:02'].kennung === 'dns-fairphone' && eW.werte.unterwegs.kurznamen === 1);
+      untE.stoppen(); untH.stoppen(); for (const p of [PA, PB]) p.srv.close(); ucgSrv.close();
+    }
+    }
+    webK.close();
+  }
+  // ── Benachrichtigungen aufs Handy: Web-Push (RFC 8291/8292) und ntfy ──
+  {
+    const b = (t) => Buffer.from(t, 'base64url');
+    const vektor = pushVerschluesseln(b('BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4'), b('BTBZMqHH6r4Tts7J_aSIgg'), 'When I grow up, I want to be a watermelon', { asPrivat: b('yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw'), salz: b('DGv6ra1nlYgDCS1FRnbzlw') });
+    pruefe('Web-Push: Verschlüsselung trifft den Prüfvektor aus RFC 8291 Byte für Byte', vektor.toString('base64url') === 'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN');
+    pruefe('Web-Push: nur https-Endpunkte der Browser-Push-Dienste (kein http, kein Port, keine fremden Hosts, keine Zugangsdaten in der Adresse)', endpunktOk('https://web.push.apple.com/abc') && endpunktOk('https://fcm.googleapis.com/fcm/send/x') && endpunktOk('https://wns2-db5p.notify.windows.com/w/?token=x') && !endpunktOk('http://web.push.apple.com/abc') && !endpunktOk('https://web.push.apple.com:8443/abc') && !endpunktOk('https://web.push.apple.com.boese.example/abc') && !endpunktOk('https://10.0.0.1/abc') && !endpunktOk('https://u:p@fcm.googleapis.com/x'));
+    const bd = path.join(tmp, 'benachrichtigung'); fs.mkdirSync(bd, { recursive: true });
+    const gesendet = []; let antwort = 201;
+    const bn = new Benachrichtigung({ verzeichnis: bd, geheimnis: 'g'.repeat(32), protokoll: () => {}, anfrager: async (url, o) => { gesendet.push({ url, ...o }); return { status: url.includes('ntfy') ? 200 : antwort, text: '' }; } });
+    const ua = nodeCrypto.createECDH('prime256v1'); ua.generateKeys(); const auth = nodeCrypto.randomBytes(16);
+    const abo = { endpoint: 'https://web.push.apple.com/TOKEN-1', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } };
+    let falsch = 0; for (const x of [{ ...abo, endpoint: 'https://boese.example/x' }, { ...abo, keys: { p256dh: 'AAAA', auth: abo.keys.auth } }, { ...abo, keys: { p256dh: abo.keys.p256dh, auth: 'kurz' } }]) { try { bn.aboHinzufuegen({ abo: x, name: 'x' }); } catch (e) { falsch++; } }
+    const id = bn.aboHinzufuegen({ abo, name: 'iPhone <b>Mama</b>', sub: 'https://adblock.example.org' });
+    const id2 = bn.aboHinzufuegen({ abo, name: 'iPhone neu', sub: 'https://adblock.example.org' });
+    pruefe('Web-Push: ungültige Abos abgelehnt; dasselbe Gerät zweimal = ein Eintrag; Name ohne HTML', falsch === 3 && id === id2 && bn.status().push.abos.length === 1 && !bn.status().push.abos[0].name.includes('<'));
+    const erg = await bn.senden({ titel: 'Tablet: Anonyme Chats gesperrt', text: '3 Versuche – gesperrt.', ernst: true, tag: 'aa|kat:anonym' });
+    const g = gesendet[0], k = g?.kopf || {};
+    // Empfängerseite (wie der Browser): entschlüsseln
+    const body = g.daten, salt = body.subarray(0, 16), idlen = body[20], asPub = body.subarray(21, 21 + idlen), ct = body.subarray(21 + idlen);
+    const ikm = Buffer.from(nodeCrypto.hkdfSync('sha256', ua.computeSecret(asPub), auth, Buffer.concat([Buffer.from('WebPush: info\0'), ua.getPublicKey(), asPub]), 32));
+    const de = nodeCrypto.createDecipheriv('aes-128-gcm', Buffer.from(nodeCrypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16)), Buffer.from(nodeCrypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12)));
+    de.setAuthTag(ct.subarray(ct.length - 16)); const klar = Buffer.concat([de.update(ct.subarray(0, ct.length - 16)), de.final()]);
+    const inhalt = JSON.parse(klar.subarray(0, klar.length - 1).toString('utf8'));
+    // VAPID: Signatur mit dem öffentlichen Schlüssel prüfen
+    const [, t, kk] = /^vapid t=([^,]+), k=(.+)$/.exec(k.Authorization || '') || [];
+    const [h64, c64, s64] = String(t).split('.'), claims = JSON.parse(Buffer.from(c64 || '', 'base64url').toString());
+    const pub = Buffer.from(kk || '', 'base64url'), jwkPub = { kty: 'EC', crv: 'P-256', x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33).toString('base64url') };
+    const sigOk = nodeCrypto.verify('sha256', Buffer.from(`${h64}.${c64}`), { key: nodeCrypto.createPublicKey({ key: jwkPub, format: 'jwk' }), dsaEncoding: 'ieee-p1363' }, Buffer.from(s64 || '', 'base64url'));
+    pruefe('Web-Push: Senden verschlüsselt (aes128gcm, Empfänger entschlüsselt), VAPID-Signatur gültig (aud = Push-Dienst, sub = eigene Adresse, exp ≤ 24 h), dringend bei ernsten Meldungen', erg.push === 1 && k['Content-Encoding'] === 'aes128gcm' && k.TTL === '86400' && k.Urgency === 'high' && inhalt.titel === 'Tablet: Anonyme Chats gesperrt' && inhalt.tag === 'aa|kat:anonym' && sigOk && claims.aud === 'https://web.push.apple.com' && claims.sub === 'https://fah-adblock.example.org' && claims.exp - Date.now() / 1000 <= 86400 && kk === bn.oeffentlicherSchluessel(), JSON.stringify({ erg, k: Object.keys(k), claims, sigOk }));
+    antwort = 410; await bn.senden({ titel: 'x', text: 'y' });
+    pruefe('Web-Push: abgelaufenes Abo (410) wird entfernt', bn.status().push.abos.length === 0);
+    bn.aboHinzufuegen({ abo, name: 'iPhone' }); antwort = 201;
+    bn.ntfySetzen({ thema: 'fah-abcdefghijklmnop' }); bn.z.ntfy = { ...bn.z.ntfy, url: 'http://ntfy.example.org', schluessel: verschluesseln('tk_geheim12345', 'g'.repeat(32)) };   // Altbestand: http an fremden Server
+    gesendet.length = 0; const e2 = await bn.senden({ titel: 'T', text: 'x' });
+    bn.ntfySetzen({ url: 'http://192.168.1.5:8090' }); bn.ntfySetzen({ schluessel: 'tk_geheim12345' });
+    gesendet.length = 0; const e3 = await bn.senden({ titel: 'T', text: 'x' }); const nt = gesendet.find((x) => x.url.includes('192.168.1.5'));
+    let themaFalsch = 0; for (const t of ['kurz']) { try { bn.ntfySetzen({ thema: t }); } catch (e) { themaFalsch++; } }
+    bn.ntfySetzen({ url: 'https://ntfy.sh' }); try { bn.ntfySetzen({ thema: 'kinderschutz12' }); } catch (e) { themaFalsch++; }
+    let urlFalsch = 0; for (const u of ['http://10.irgendwas.example', 'http://127.0.0.1:80', 'https://169.254.169.254', 'https://u:p@ntfy.sh', 'http://ntfy.example.org']) { try { bn.ntfySetzen({ url: u }); } catch (e) { urlFalsch++; } }
+    themaFalsch = themaFalsch === 2 && urlFalsch === 5;
+    bn.ntfySetzen({ url: 'http://192.168.1.5:8090' });
+    pruefe('ntfy: Zugangsschlüssel nie unverschlüsselt ins Internet (http an fremden Server scheitert, Push geht trotzdem); im eigenen Netz geht http; neue Adresse löscht den alten Schlüssel; kurzes Thema abgelehnt', e2.ntfy === false && e2.push === 1 && e3.ntfy === true && JSON.parse(nt.daten).topic === 'fah-abcdefghijklmnop' && nt.kopf.Authorization === 'Bearer tk_geheim12345' && !fs.readFileSync(path.join(bd, 'benachrichtigung.json'), 'utf8').includes('tk_geheim'), JSON.stringify({ e2, e3 }));
+    bn.ntfySetzen({ schluessel: 'tk_geheim12345' }); const vorWechsel = bn.status().ntfy.schluesselGesetzt; bn.ntfySetzen({ url: 'https://ntfy.sh' });
+    pruefe('ntfy: Adresswechsel ohne neuen Schlüssel löscht den Schlüssel; http nur an private IPs, nie Loopback/Link-Local/Zugangsdaten in der Adresse; auf ntfy.sh mind. 20 Zeichen', vorWechsel && !bn.status().ntfy.schluesselGesetzt && themaFalsch);
+    // Meldungen: nach draußen ohne Domains, in der Liste mit
+    const an = []; const ml = new Meldungen({ einst: { werte: { meldungen: { an: true, profile: ['kinder'], kategorien: ['anonym'], ruheMin: 60 } } }, senden: async (n) => { an.push(n); return { ntfy: null, push: 1, fehler: [] }; }, kategorieName: () => 'Anonyme Chats', protokoll: () => {} });
+    ml.sammle('kat:anonym', { geraet: 'aa:bb', geraetName: 'Tablet', kategorie: 'anonym', domain: 'ngl.link' }); ml.sammle('kat:anonym', { geraet: 'aa:bb', geraetName: 'Tablet', kategorie: 'anonym', domain: 'ngl.link' });
+    await ml.abschicken('aa:bb|kat:anonym');
+    pruefe('Meldungen: aufs Handy nur Gerät, Art und Anzahl – die Domains stehen nur in der Liste; Eintrag merkt sich den Versand', an.length === 1 && an[0].titel === 'Tablet: Anonyme Chats gesperrt' && !JSON.stringify(an[0]).includes('ngl') && an[0].ernst === true && ml.verlauf[0].details.includes('ngl.link (2×)') && ml.verlauf[0].handy?.push === 1, JSON.stringify({ an, v: ml.verlauf[0] }));
+    // Hängender Server: harte Frist, die Meldung steht sofort in der Liste
+    const haengt = http.createServer((q, r) => { r.writeHead(200); const t = setInterval(() => r.write('.'), 300); r.on('close', () => clearInterval(t)); }).listen(0, '127.0.0.1');
+    await new Promise((f) => haengt.once('listening', f));
+    const { anfrageFuerTest } = require('../src/benachrichtigung.js');
+    const t0 = Date.now(); let haengFehler = ''; try { await anfrageFuerTest(`http://127.0.0.1:${haengt.address().port}/`, { daten: '{}', zeitlimit: 1500 }); } catch (e) { haengFehler = e.message; }
+    const dauer = Date.now() - t0; haengt.close();
+    let sofort = false; const mh = new Meldungen({ einst: { werte: { meldungen: { an: true } } }, senden: () => new Promise(() => {}), protokoll: () => {} });
+    mh.melden({ titel: 'a', text: 'b' }); sofort = mh.verlauf.length === 1;
+    const unb = []; const mu = new Meldungen({ einst: { werte: { meldungen: { an: true, profile: ['kinder'], kategorien: ['anonym'] } } }, senden: async (n) => { unb.push(n); return { ntfy: true, push: 0, fehler: [] }; }, kategorieName: () => 'Anonyme Chats', protokoll: () => {} });
+    mu.sammle('kat:anonym', { geraet: 'aa:bb:cc:dd:ee:ff', kategorie: 'anonym', domain: 'ngl.link' }); await mu.abschicken('aa:bb:cc:dd:ee:ff|kat:anonym');
+    pruefe('Versand: tröpfelnder Server endet nach der harten Frist; Meldung steht sofort in der Liste, auch wenn das Senden hängt; ohne Gerätenamen geht keine MAC nach draußen', haengFehler === 'Zeitüberschreitung' && dauer < 4000 && sofort && unb[0]?.titel === 'Unbenanntes Gerät: Anonyme Chats gesperrt' && mu.verlauf[0].titel.startsWith('aa:bb'), JSON.stringify({ haengFehler, dauer, sofort, unb }));
+    const ohne = new Meldungen({ einst: { werte: { meldungen: { an: true } } }, protokoll: () => {} }); await ohne.melden({ titel: 'x', text: 'y' });
+    pruefe('Meldungen: ohne eingerichteten Weg bleibt alles in der Liste (kein Versand, kein Fehler)', ohne.verlauf.length === 1 && !ohne.verlauf[0].handy);
+  }
   for (const x of [PA, PB, PC, PD]) { x.sp.stoppen(); x.wi.close(); }
   E.sp.stoppen(); H.wi.close(); E.wi.close();
   web.close(); prot2.schliessen();

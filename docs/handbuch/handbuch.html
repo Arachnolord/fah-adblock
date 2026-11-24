@@ -109,6 +109,7 @@
     <li>Listen &amp; Regeln <span>Domain prüfen, Block- und Freigabelisten, eigene Regeln</span></li>
     <li>Dienste <span>waipu, YouTube, Social Media &amp; Co. – geschützt, nach Listen oder gesperrt</span></li>
     <li>Profile und Zeitfenster <span>Kinder, Unbeschränkt, eigene Profile, Dienste je Profil</span></li>
+    <li>Kinderschutz <span>Meldungen aufs Handy, Zeitlimits, Ruhezeiten, sichere Suche, Hilfe, Schutz unterwegs</span></li>
     <li>Statistik</li>
     <li>Einstellungen <span>Jede Einstellung erklärt</span></li>
     <li>Betrieb auf dem NAS <span>manage.sh, Update, Sicherung</span></li>
@@ -538,12 +539,13 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 <!-- ─────────────────────────── 10 ─────────────────────────── -->
 <section class="kapitel">
   <h2><span class="nr">10</span>Profile und Zeitfenster</h2>
-  <figure><img src="bilder/13-profile.jpg" alt="Profile" style="max-height:64mm"><figcaption>Profile Standard, Kinder und Unbeschränkt mit Zuordnung der Geräte</figcaption></figure>
-  <p>Ein Profil legt fest, welche <b>Kategorien</b> (Werbung &amp; Tracker, Schadsoftware &amp; Phishing, Social Media, Jugendschutz, Glücksspiel) für die zugeordneten Geräte gesperrt sind. <b>Schalter an</b> = Kategorie gesperrt. Eigene Freigaben gelten unabhängig vom Profil.</p>
+  <figure><img src="bilder/13-profile.jpg" alt="Profile" style="max-height:64mm"><figcaption>Profile Standard, Kinder und Unbeschränkt – unten je Karte „Einzelne Dienste“ und „🧒 Kinderschutz“, oben rechts „+ aus Altersvorlage“</figcaption></figure>
+  <p>Ein Profil legt fest, welche <b>Kategorien</b> (Werbung &amp; Tracker, Schadsoftware &amp; Phishing, Social Media, Jugendschutz, Glücksspiel, anonyme Chats, Drogen &amp; Vaping, Umgehung, Piraterie) für die zugeordneten Geräte gesperrt sind. <b>Schalter an</b> = Kategorie gesperrt. Eigene Freigaben gelten unabhängig vom Profil.</p>
+  <p><b>Kinderprofile</b> sind ganz normale Profile mit mehr Schutz. Jede Profilkarte hat unten den Bereich <b>🧒 Kinderschutz</b> mit sicherer Suche, YouTube-Modus, Ruhezeiten, Zeitlimits und Altersvorlage (Kapitel 11). Für jedes Kind lässt sich ein eigenes Profil anlegen – am schnellsten mit <b>+ aus Altersvorlage</b> (Grundschule, Klasse 5 bis 7, ab 14) und danach anpassen.</p>
   <table>
     <tr><th>Profil</th><th>Voreinstellung</th></tr>
     <tr><td>Standard</td><td>Werbung &amp; Tracker sowie Schadsoftware gesperrt. Jedes neue Gerät bekommt automatisch dieses Profil.</td></tr>
-    <tr><td>Kinder</td><td>Zusätzlich Jugendschutz und Glücksspiel immer, Social Media täglich 20:00–07:00. Zugeordnet: Nintendo Switch, Gast Smartphone NEU und ALT, Gast-tab, papa-Lenovo und drei weitere Geräte aus dem früheren UniFi-Filter „Kinder“.</td></tr>
+    <tr><td>Kinder</td><td>Zusätzlich Jugendschutz, Glücksspiel, anonyme Chats, Drogen und Umgehung immer, Social Media täglich 20:00–07:00, Messenger-Nachtruhe 21:00–06:30, sichere Suche (seit 23.11.2026, siehe Kapitel 11). Zugeordnet: Nintendo Switch, Gast Smartphone NEU und ALT, Gast-tab, papa-Lenovo und drei weitere Geräte aus dem früheren UniFi-Filter „Kinder“.</td></tr>
     <tr><td>Unbeschränkt</td><td>Nur Schadsoftware &amp; Phishing gesperrt – z. B. für ein Arbeitsgerät, das keine Filterung verträgt.</td></tr>
   </table>
   <h3>Zeitfenster</h3>
@@ -568,8 +570,84 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 </section>
 
 <!-- ─────────────────────────── 10 ─────────────────────────── -->
+<!-- ─────────────────────────── Kinderschutz ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">11</span>Statistik</h2>
+  <h2><span class="nr">11</span>Kinderschutz</h2>
+  <figure><img src="bilder/14b-kinderschutz.jpg" alt="Kinderschutz" style="max-height:110mm"><figcaption>Ansicht Kinderschutz: Meldungen, Zeitkonten und Schutz unterwegs – darunter Hilfsangebote und Altersvorlagen</figcaption></figure>
+  <p>Seit 23.11.2026 bündelt die Ansicht <b>Kinderschutz</b>, was Eltern im Alltag brauchen. Enthalten ist alles, was ein DNS-Filter dafür leisten kann.</p>
+  <div class="kasten"><span class="titel">Ehrlich: was ein DNS-Filter nicht kann</span><p>FAH-Adblock sieht nur, <i>welche</i> Seiten ein Gerät aufruft, nie den Inhalt von Chats. Mobbing selbst erkennt er nicht. Er sperrt die Orte, an denen es meist passiert (anonyme Frage-Apps, Zufallschats), meldet Versuche, hält Hilfsangebote immer offen und begrenzt Zeiten. Chats mitlesen gehört nicht dazu.</p></div>
+  <h3>Neue Kategorien</h3>
+  <table>
+    <tr><th>Kategorie</th><th>Liste</th><th>Wozu</th></tr>
+    <tr><td>🕵️ Anonyme Chats &amp; Fragen-Apps</td><td>eigene Liste (kommt mit jedem Update)</td><td>NGL, Tellonym, sendit, Jodel, Yubo, Omegle-Nachfolger und Zufalls-Videochats – dort läuft das meiste Cybermobbing, dort sprechen Fremde Kinder an.</td></tr>
+    <tr><td>💊 Drogen &amp; Vaping</td><td>Blocklist Project Drogen + Vaping</td><td>Drogen-Shops und -Foren, E-Zigaretten-Werbung.</td></tr>
+    <tr><td>🚪 Umgehung</td><td>HaGeZi DoH/VPN/TOR/Proxy</td><td>fremde verschlüsselte DNS-Server, VPN-Apps, Web-Proxys, iCloud Privat-Relay – damit ließe sich der ganze Filter umgehen.</td></tr>
+    <tr><td>🏴‍☠️ Piraterie</td><td>Blocklist Project Piraterie</td><td>illegale Film- und Spieleseiten (oft voller Schadsoftware).</td></tr>
+  </table>
+  <p>Dazu die Liste <b>Blocklist Project Betrug</b> in der Kategorie Schadsoftware – ab Werk <b>aus</b>, weil sie für alle Profile gälte und vereinzelt Fehlalarme hat. Das Profil „Kinder“ bekam beim Update einmalig anonyme Chats, Drogen, Umgehung, Messenger-Nachtruhe 21:00–06:30 und die sichere Suche; was du danach änderst, bleibt.</p>
+  <h3>Hilfsangebote – immer erreichbar</h3>
+  <p>Die Rubrik <b>Hilfe &amp; Beratung</b> (Nummer gegen Kummer, krisenchat, JugendNotmail, JUUUPORT, TelefonSeelsorge, [U25], bke-Onlineberatung, Hilfetelefon Gewalt, Hilfe bei Missbrauch, Meldestellen, Rat auf Draht/147) ist fest geschützt: keine Liste, keine eigene Sperrregel, kein Profil, keine Ruhezeit und kein Zeitlimit kann sie sperren. Unter <i>Dienste</i> steht sie mit 🔒.</p>
+  <h3>Im Profil: sichere Suche, YouTube-Modus, Ruhezeiten, Zeitlimits</h3>
+  <div class="zwei">
+    <figure style="margin-top:0"><img src="bilder/14c-profil-kinderschutz.jpg" alt="Kinderschutz im Profil" style="max-height:150mm"><figcaption>Bereich 🧒 Kinderschutz der Profilkarte „Kinder“</figcaption></figure>
+    <div>
+  <p>Jede Profilkarte hat unten den Bereich <b>🧒 Kinderschutz</b> (aufklappen; „· aktiv“, sobald etwas eingestellt ist). Alles wirkt nach <b>Speichern</b> sofort.</p>
+  <ul>
+    <li><b>Sichere Suche erzwingen</b> – Google (alle Länder), Bing und DuckDuckGo liefern nur gefilterte Ergebnisse, egal was in der Suchmaschine eingestellt ist (Umlenkung per DNS auf forcesafesearch.google.com, strict.bing.com, safe.duckduckgo.com).</li>
+    <li><b>YouTube</b> – normal, eingeschränkter Modus moderat oder streng. YouTube bleibt immer erreichbar.</li>
+    <li><b>Ruhezeiten je Rubrik</b> – z. B. Messenger 21:00–06:30: In der Zeit sind alle Dienste der Rubrik gesperrt, auch WhatsApp, wenn es im Profil erlaubt ist. Einzeln freigestellte Dienste (Pokémon GO, PokeRaid) zählen nicht zur Rubrik Spiele.</li>
+    <li><b>Zeitlimits pro Tag</b> – für einen Dienst (z. B. TikTok 30 min) oder eine ganze Rubrik (alle Spiele 60 min). Gezählt wird an den DNS-Anfragen: erste Anfrage = 1 Minute, jede weitere innerhalb von 5 Minuten die Zeit seit der vorigen. Das ist eine Schätzung – eine App im Hintergrund kann mitzählen. Ist die Zeit um, bleibt der Dienst bis Mitternacht gesperrt. Antworten für begrenzte Dienste gelten nur 60 s, damit die Sperre schnell greift.</li>
+    <li><b>Altersvorlage anwenden</b> – ersetzt Kategorien, Dienste, Ruhezeiten, sichere Suche und Zeitlimits des Profils. Name, Farbe und Geräte bleiben.</li>
+  </ul>
+    </div>
+  </div>
+  <h3>Altersvorlagen</h3>
+  <table>
+    <tr><th>Vorlage</th><th>Inhalt</th></tr>
+    <tr><td>Grundschule (6–10)</td><td>keine sozialen Netzwerke und Messenger, Spiele 60 min/Tag und ab 19:30 Ruhe, sichere Suche, YouTube streng.</td></tr>
+    <tr><td>Klasse 5 bis 7 (10–13)</td><td>WhatsApp, Signal, Threema erlaubt; TikTok, Snapchat, Discord gesperrt; Messenger 21:00–06:30, Spiele 90 min/Tag, YouTube moderat.</td></tr>
+    <tr><td>Ab 14</td><td>soziale Netzwerke erlaubt; anonyme Chats, Drogen, Glücksspiel, Umgehung gesperrt; Messenger und Social Media 22:30–06:00 Ruhe.</td></tr>
+  </table>
+  <p>Anlegen unter <i>Kinderschutz → Altersvorlagen → Als Profil anlegen</i> oder <i>Profile → + aus Altersvorlage</i>. Fernsehen und YouTube werden nie gesperrt (Grundsatz), für Jüngere aber gefiltert.</p>
+  <h3>Zeitkonten heute</h3>
+  <p>Zeigt je Gerät den Verbrauch jedes Limits. <b>+15 min</b> / <b>+30 min</b> geben sofort Zusatzzeit für heute, <b>heute frei</b> hebt das Limit bis Mitternacht auf, <b>Zusatz zurück</b> nimmt sie zurück. Um Mitternacht beginnt alles neu. Der Ersatz schickt seine Nutzung beim Abgleich an den Haupt und übernimmt dessen „aufgebraucht“.</p>
+  <h3>Meldungen</h3>
+  <p>FAH-Adblock sammelt Auffälliges selbst: Sperren in den gewählten Kategorien (Werbung nie), optional gesperrte Dienste und aufgebrauchte Zeitlimits, jeweils nur für Geräte der gewählten Profile. Mehrere Versuche innerhalb einer Minute werden zu <b>einem</b> Eintrag gebündelt, danach hat das Gerät für diese Art eine Ruhepause (Vorgabe 60 min). Die Liste steht oben in <i>Kinderschutz → Meldungen</i>, die Zahl von heute als Kachel im Schutzschild (rot, sobald es etwas gibt). Einstellungen unter „Einstellungen der Meldungen“. Ohne weitere Einrichtung bleibt alles in FAH-Adblock.</p>
+  <div class="kasten tipp"><span class="titel">Umgehung erkennen</span><p>Ist ein Gerät laut UniFi im Netz, schickt aber seit X Minuten (Vorgabe 30) keine Anfrage mehr an FAH-Adblock, kommt die Meldung „fragt FAH-Adblock nicht mehr“ – meist ein eigenes DNS, eine VPN-App oder iCloud Privat-Relay. Höchstens eine Meldung je Gerät alle 6 Stunden. Braucht den UniFi-Zugang.</p></div>
+  <h3>Meldungen aufs Handy: Push oder ntfy</h3>
+  <div class="zwei">
+    <figure style="margin-top:0"><img src="bilder/14d-aufs-handy.jpg" alt="Aufs Handy" style="max-height:120mm"><figcaption>Kinderschutz → Meldungen → Aufs Handy</figcaption></figure>
+    <div>
+      <p>Zusätzlich kann jede Meldung als Benachrichtigung aufs Handy kommen. Nach draußen gehen nur Gerät, Art und Anzahl („Tablet: Anonyme Chats gesperrt – 3 Versuche“); welche Seiten genau, steht nur in FAH-Adblock. In der Liste zeigt 📲 an, dass eine Meldung rausging.</p>
+      <p><b>Push – FAH-Adblock als App, keine Fremd-App:</b></p>
+      <ol class="schritte">
+        <li>FAH-Adblock auf dem Handy über die <b>https-Adresse aus FAH-Proxy</b> öffnen (zu Hause oder per VPN) – nicht über die IP-Adresse.</li>
+        <li><b>iPhone/iPad</b> (ab iOS 16.4): in Safari Teilen → <b>Zum Home-Bildschirm</b>, dann FAH-Adblock vom Home-Bildschirm starten und anmelden. <b>Android:</b> geht direkt in Chrome.</li>
+        <li><i>Kinderschutz → Meldungen</i> → <b>Push auf diesem Gerät einschalten</b>, Mitteilungen erlauben, Namen vergeben.</li>
+        <li><b>Test</b> tippen – die Testnachricht kommt sofort.</li>
+      </ol>
+      <p>Benachrichtigungen kommen auch unterwegs an (über Apple bzw. Google). Abgelaufene Geräte entfernt FAH-Adblock selbst, ✕ entfernt eines von Hand.</p>
+      <p><b>ntfy</b> (optional): unter „ntfy (optional)“ ein langes Thema eintragen (🎲) und in der ntfy-App abonnieren; leeres Thema = aus. Der Zugangsschlüssel eines eigenen ntfy-Servers geht nur über https, im Heimnetz auch über http.</p>
+    </div>
+  </div>
+  <div class="kasten"><span class="titel">Haupt und Ersatz</span><p>Eingerichtet wird am Haupt. Der Ersatz bekommt Push-Schlüssel, Geräte und ntfy beim Abgleich verschlüsselt mit und schickt Meldungen selbst nur, solange der Haupt ausgefallen ist (nach 6 Minuten).</p></div>
+  <h3>Schutz unterwegs (Mobilfunk)</h3>
+  <p>Ein Kinderhandy filtert damit auch unterwegs über FAH-Adblock – mit dem Profil genau dieses Geräts. Jedes Gerät bekommt einen eigenen Namen <span class="mono">dns-&lt;kennung&gt;.&lt;Basisdomain&gt;</span>. Unter diesem Namen antwortet FAH-Adblock nur als DNS-Dienst; Oberfläche, API und Anmeldung sind von außen nicht erreichbar.</p>
+  <ol class="schritte">
+    <li><i>Kinderschutz → Schutz unterwegs</i>: einschalten, Basisdomain eintragen (eine Domain, deren Unternamen per Platzhalter auf den Anschluss zeigen), <b>Speichern</b>.</li>
+    <li><b>Einmalig FAH-Proxy koppeln:</b> die beiden FAH-Proxy-Adressen (Haupt und Fail-over) sind vorbelegt – Admin-Name, Passwort und ggf. 2FA-Code eingeben, <b>Koppeln</b>. FAH-Adblock legt sich dort ein eigenes Konto „fah-adblock“ mit der Rolle <b>Dienst</b> an (ab FAH-Proxy 0.9.6): Es darf nur die Gruppe <b>„AdBlock DNS Domains“</b> pflegen – keine anderen Einträge, keine Einstellungen, keine geschützten Seiten. Dein Passwort wird nicht gespeichert.</li>
+    <li>Gerät hinzufügen. Der Name ist kurz und lesbar (z. B. <span class="mono">dns-fairphone-gen-6.&lt;Basisdomain&gt;</span>), mit ✏️ änderbar.</li>
+    <li>Alles Weitere macht FAH-Adblock selbst: Eintrag in FAH-Proxy (an der gerade aktiven Instanz, FAH-Proxy spiegelt ihn), Portfreigabe <b>TCP 853</b> in der UCG, Zertifikat: FAH-Proxy holt es für den Namen ohnehin (Caddy, bei Bedarf ZeroSSL) und gibt es an FAH-Adblock weiter – je Gerät nur EIN Zertifikat, Caddy erneuert es. Wird ein Gerät gelöscht oder der Schutz ausgeschaltet, verschwinden Eintrag bzw. Portfreigabe wieder.</li>
+    <li><b>Android:</b> 🤖 Android zeigt den Weg: Einstellungen → Netzwerk &amp; Internet → Privates DNS → „Hostname des Anbieters“ → Namen eintragen. <b>iPhone/iPad:</b> <b>🍏 iPhone-Profil</b> auf dem Gerät in Safari öffnen (zu Hause), dann Einstellungen → Profil geladen → Installieren. Das Profil nutzt DNS-over-HTTPS, immer – auch im WLAN.</li>
+  </ol>
+  <div class="kasten"><span class="titel">Warum es manchmal dauert</span><p>Let's Encrypt stellt für eine Domain wie <span class="mono">selfhost.eu</span> höchstens 50 Zertifikate pro Woche aus – geteilt mit allen Nutzern dieser DynDNS-Domain. Ist das Kontingent aus, nimmt Caddy ZeroSSL; das kann einige Minuten dauern. Darum Gerätenamen möglichst nicht ständig ändern: jeder neue Name braucht ein neues Zertifikat.</p></div>
+  <div class="kasten tipp"><span class="titel">Fail-over</span><p>UniFi kennt je Portfreigabe nur <b>ein</b> Ziel. Deshalb stellt die gerade zuständige Instanz die Freigabe auf sich um – wie FAH-Proxy bei 80/443. Der Ersatz bekommt Zertifikate und den FAH-Proxy-Zugang beim Abgleich verschlüsselt vom Haupt. Ist der Haupt länger als 6 Minuten weg, stellt der Ersatz FAH-Proxy-Einträge und die 853-Freigabe auf sich um; kommt der Haupt zurück, holt er beides mit seiner nächsten Pflege (spätestens nach 10 Minuten) zurück.</p></div>
+  <p><b>Neu ausstellen</b> erzeugt ein neues Geheimnis für das iPhone-Profil (z. B. wenn ein Handy verloren ging) – der kurze Name bleibt, das iPhone-Profil danach neu installieren. Den Namen änderst du mit ✏️; FAH-Proxy-Eintrag und Zertifikat folgen von selbst. DoT läuft an der zuständigen Instanz: am Haupt, nach einem Ausfall am Ersatz. Die Dashboard-Kachel <b>Unterwegs geschützt</b> zählt die Geräte, die in der letzten Stunde von unterwegs gefragt haben.</p>
+  <div class="kasten"><span class="titel">Gut zu wissen</span><p>Wer den Namen kennt, kann darüber DNS auflösen (Namen mit Zertifikat stehen in öffentlichen Zertifikats-Logs). Die Anfragen werden dem Gerät zugeschrieben und gebremst; Heimnetz-Namen gibt es von draußen nie. Das iPhone-Profil enthält zusätzlich ein Geheimnis im Pfad.</p></div>
+</section>
+
+<section class="kapitel">
+  <h2><span class="nr">12</span>Statistik</h2>
   <figure><img src="bilder/15-statistik.jpg" alt="Statistik"><figcaption>Verlauf, Toplisten mit Beschreibung und aktivste Geräte</figcaption></figure>
   <ul>
     <li><b>Diagramm</b> – Anfragen über die Zeit, grau erlaubt, rot geblockt. Umschalter <b>24 h</b> (je Stunde) oder <b>7 Tage</b> (je Tag). Darunter die Summe und der geblockte Anteil.</li>
@@ -581,7 +659,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 
 <!-- ─────────────────────────── 11 ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">12</span>Einstellungen</h2>
+  <h2><span class="nr">13</span>Einstellungen</h2>
   <h3>🔐 Verschlüsseltes DNS nach außen</h3>
   <figure><img src="bilder/16-einstellungen-1.jpg" alt="Verschlüsseltes DNS" style="max-height:92mm"></figure>
       <p>Wohin FAH-Adblock erlaubte Anfragen weiterschickt. Die Verbindung ist per DNS-over-HTTPS verschlüsselt – weder der Internetanbieter noch jemand dazwischen sieht, welche Seiten aufgerufen werden.</p>
@@ -643,7 +721,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 
 <!-- ─────────────────────────── 12 ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">13</span>Betrieb auf dem NAS</h2>
+  <h2><span class="nr">14</span>Betrieb auf dem NAS</h2>
   <p>FAH-Adblock läuft als ein Docker-Container im Host-Netz des NAS unter <code>/volume3/docker/fah-adblock</code>. Alle Befehle dort per SSH ausführen.</p>
   <table>
     <tr><th>Befehl</th><th>Was er macht</th></tr>
@@ -678,12 +756,12 @@ TZ=Europe/Berlin
 SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
   <p>Werte aus der <code>.env</code> gelten als Startwerte; Erlaubte Netze und Gateway lassen sich danach in der Oberfläche ändern.</p>
   <h3>Sicherung</h3>
-  <p>Für eine vollständige Sicherung genügt der Ordner <code>data/</code> zusammen mit <code>.env</code> und <code>docker-compose.yml</code>. Die Sicherung aus der Oberfläche (Kapitel 12) enthält alle Einstellungen, aber bewusst kein Passwort und keinen UniFi-Schlüssel.</p>
+  <p>Für eine vollständige Sicherung genügt der Ordner <code>data/</code> zusammen mit <code>.env</code> und <code>docker-compose.yml</code>. Die Sicherung aus der Oberfläche (Kapitel 13) enthält alle Einstellungen, aber bewusst kein Passwort und keinen UniFi-Schlüssel.</p>
 </section>
 
 <!-- ─────────────────────────── 13 ─────────────────────────── -->
 <section class="kapitel">
-  <h2><span class="nr">14</span>Fehlerbehebung</h2>
+  <h2><span class="nr">15</span>Fehlerbehebung</h2>
   <table>
     <tr><th>Problem</th><th>Vorgehen</th></tr>
     <tr><td>Teams-Anrufe kommen nicht zustande oder brechen ab</td><td>Unter Dienste → Messenger &amp; Konferenzen „Microsoft Teams“ und unter Cloud &amp; Arbeit „Microsoft 365“ auf <b>geschützt</b> stellen. Im Protokoll nach dem Gerät filtern: steht dort weiter „geblockt“ bei einer Microsoft-Adresse, die Adresse melden. Steht ein filternder DNS-Anbieter (z. B. DNSforge) in der Anbieterliste, sperrte dieser früher unbemerkt Teile der Anruf-Konfiguration – seit Version 2026.09.21-29 werden geschützte Dienste an ihm vorbei aufgelöst. Bleibt das Protokoll sauber, liegt es nicht am Filter (dann Firewall, VPN oder WLAN prüfen – Anrufe laufen über UDP 3478–3481).</td></tr>
@@ -701,12 +779,15 @@ SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
     <tr><td>Anbieter meldet Fehler</td><td>Einstellungen → Verschlüsseltes DNS zeigt Antwortzeit und Fehler; FAH-Adblock weicht selbst aus.</td></tr>
     <tr><td>Blockliste mit Fehler</td><td>Fehler steht an der Liste, die alte Fassung bleibt aktiv; „↻“ versucht es erneut.</td></tr>
     <tr><td>Seite nach Freigabe noch weg</td><td>Tab schließen und neu öffnen – spätestens nach einer Minute ist die alte Antwort vergessen. Nach einem Update lädt sich die Oberfläche von selbst neu.</td></tr>
+    <tr><td>Android: „Privates DNS-Server nicht erreichbar“</td><td>In <i>Kinderschutz → Schutz unterwegs</i> prüfen: Zertifikat vorhanden? „DoT läuft“? Block „Freigaben – automatisch“: UCG-Portfreigabe ✅? Name exakt (dns-…)?</td></tr>
+    <tr><td>Gerät unterwegs: „wartet auf FAH-Proxy“</td><td>Ist FAH-Proxy gekoppelt (Block „Freigaben – automatisch“)? Dann 1–3 Minuten warten, bis FAH-Proxy sein Zertifikat hat; sonst „Jetzt abgleichen“.</td></tr>
+    <tr><td>Kind kommt abends nicht in WhatsApp</td><td>Ruhezeit Messenger im Profil (Kinder ab Werk 21:00–06:30) – im Protokoll steht „Ruhezeit“.</td></tr>
   </table>
 </section>
 
 <!-- ─────────────────────────── 14 ─────────────────────────── -->
 <section class="kapitel" id="anhang">
-  <h2><span class="nr">15</span>Anhang</h2>
+  <h2><span class="nr">16</span>Anhang</h2>
   <h3>Entscheidungsreihenfolge je Anfrage</h3>
   <ol class="schritte">
     <li><b>Absender prüfen</b> – nicht aus einem erlaubten Netz → Absage (REFUSED).</li>
@@ -744,6 +825,9 @@ SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
     <tr><td>listen/</td><td>Geladene Block- und Freigabelisten</td></tr>
     <tr><td>symbole/</td><td>Zwischengespeicherte UniFi-Gerätesymbole</td></tr>
     <tr><td>nutzer.json, .geheimnis</td><td>Zugang (Passwort nur als Hash) und Sitzungsschlüssel</td></tr>
+    <tr><td>meldungen.json, zeitkonto.json</td><td>Kinderschutz: Liste der Meldungen, Zeitkonten von heute</td></tr>
+    <tr><td>benachrichtigung.json</td><td>Push-Geräte, Push-Schlüssel und ntfy (Geheimnisse verschlüsselt)</td></tr>
+    <tr><td>unterwegs/, fah-proxy.json, acme/</td><td>Schutz unterwegs: Zertifikate, FAH-Proxy-Zugang (verschlüsselt), ACME-Konto</td></tr>
   </table>
 
   <h3>Domain-Beschreibungen</h3>

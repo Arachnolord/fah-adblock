@@ -20,6 +20,11 @@ const KATEGORIEN = [
   { id: 'social', name: 'Social Media', symbol: '💬', beschreibung: 'Facebook, Instagram, TikTok, Snapchat, X und ähnliche Netzwerke' },
   { id: 'jugendschutz', name: 'Jugendschutz', symbol: '🔞', beschreibung: 'Seiten mit Erwachseneninhalten' },
   { id: 'gluecksspiel', name: 'Glücksspiel', symbol: '🎰', beschreibung: 'Online-Casinos, Sportwetten, Lotterien' },
+  // Kinderschutz (23.11.2026)
+  { id: 'anonym', name: 'Anonyme Chats & Fragen-Apps', symbol: '🕵️', beschreibung: 'NGL, Tellonym, Zufalls-Videochats & Co. – dort läuft das meiste Cybermobbing, dort sprechen Fremde Kinder an' },
+  { id: 'drogen', name: 'Drogen & Vaping', symbol: '💊', beschreibung: 'Drogen-Shops und -Foren, E-Zigaretten-Werbung' },
+  { id: 'umgehung', name: 'Umgehung (VPN, Proxy, fremdes DNS)', symbol: '🚪', beschreibung: 'VPN-Apps, Web-Proxys, fremde DNS-Server und iCloud Privat-Relay – damit ließe sich der ganze Filter umgehen' },
+  { id: 'piraterie', name: 'Piraterie', symbol: '🏴‍☠️', beschreibung: 'Illegale Film-, Serien- und Spieleseiten (oft voller Schadsoftware und Abo-Fallen)' },
   { id: 'freigabe', name: 'Freigabeliste', symbol: '✅', art: 'erlauben', beschreibung: 'Geprüfte Ausnahmen: heben Fehlalarme der Werbelisten auf' },
 ];
 
@@ -30,6 +35,13 @@ const LISTEN = [
   { id: 'hagezi-social', name: 'HaGeZi Social', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/social-onlydomains.txt', kategorie: 'social', an: true, beschreibung: 'Soziale Netzwerke – greift nur in Profilen mit Kategorie Social Media' },
   { id: 'hagezi-nsfw', name: 'HaGeZi NSFW', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/nsfw-onlydomains.txt', kategorie: 'jugendschutz', an: true, beschreibung: 'Erwachseneninhalte – greift nur in Profilen mit Jugendschutz' },
   { id: 'hagezi-gambling', name: 'HaGeZi Gambling', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/gambling-onlydomains.txt', kategorie: 'gluecksspiel', an: true, beschreibung: 'Glücksspielseiten – greift nur in Profilen mit Glücksspiel' },
+  // Kinderschutz (23.11.2026 geprüft: erreichbar, gepflegt; Blocklist Project = Unlicense, HaGeZi = GPL-3.0, beide nur zur Laufzeit geladen)
+  { id: 'fah-anonym', name: 'FAH Anonyme Chats', url: 'eingebaut:anonym', kategorie: 'anonym', an: true, beschreibung: 'Eigene Liste: anonyme Frage-Apps (NGL, Tellonym, sendit …) und Zufalls-Videochats – kommt mit jedem Update' },
+  { id: 'blp-drogen', name: 'Blocklist Project Drogen', url: 'https://blocklistproject.github.io/Lists/alt-version/drugs-nl.txt', kategorie: 'drogen', an: true, beschreibung: 'Drogen-Shops, -Foren und -Werbung (Unlicense)' },
+  { id: 'blp-vaping', name: 'Blocklist Project Vaping', url: 'https://blocklistproject.github.io/Lists/alt-version/vaping-nl.txt', kategorie: 'drogen', an: true, beschreibung: 'E-Zigaretten-Shops und -Werbung (Unlicense)' },
+  { id: 'hagezi-umgehung', name: 'HaGeZi DoH/VPN/TOR/Proxy-Umgehung', url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/doh-vpn-proxy-bypass-onlydomains.txt', kategorie: 'umgehung', an: true, beschreibung: 'Fremde verschlüsselte DNS-Server, VPN- und Proxy-Dienste, iCloud Privat-Relay – greift nur in Profilen mit Kategorie Umgehung' },
+  { id: 'blp-piraterie', name: 'Blocklist Project Piraterie', url: 'https://blocklistproject.github.io/Lists/alt-version/piracy-nl.txt', kategorie: 'piraterie', an: true, beschreibung: 'Illegale Streaming- und Download-Seiten (Unlicense)' },
+  { id: 'blp-betrug', name: 'Blocklist Project Betrug', url: 'https://blocklistproject.github.io/Lists/alt-version/scam-nl.txt', kategorie: 'schadsoftware', an: false, beschreibung: 'Betrugs- und Fake-Shop-Seiten – gilt für ALLE Profile mit Schadsoftware-Schutz, darum ab Werk aus (vereinzelte Fehlalarme möglich)' },
   // Freigabelisten (15.09.2026 geprüft: erreichbar, gepflegt, verbreitet)
   { id: 'frei-adguard', name: 'AdGuard DNS-Filter – Ausnahmen', url: 'https://raw.githubusercontent.com/AdguardTeam/AdGuardSDNSFilter/master/Filters/exceptions.txt', kategorie: 'freigabe', an: true, beschreibung: 'Vom AdGuard-Team gepflegte Ausnahmen seines DNS-Filters – Domains, deren Sperre Seiten nachweislich kaputt macht' },
   { id: 'frei-anudeep', name: 'anudeepND Whitelist', url: 'https://raw.githubusercontent.com/anudeepND/whitelist/master/domains/whitelist.txt', kategorie: 'freigabe', an: true, beschreibung: 'Häufig fälschlich gesperrte Dienste (Microsoft, Apple, Google, Spotify, Updates …), MIT' },
@@ -39,11 +51,20 @@ const LISTEN = [
   { id: 'frei-anudeep-optional', name: 'anudeepND Optional', url: 'https://raw.githubusercontent.com/anudeepND/whitelist/master/domains/optional-list.txt', kategorie: 'freigabe', an: false, beschreibung: 'Zusätzliche Freigaben für einzelne Dienste (z. B. Nachrichten-Videos) – nur bei Bedarf' },
 ];
 
+// Kinderschutz-Ergänzung für das Profil „Kinder“ – neue Installationen ab Werk, bestehende einmalig beim ersten Start (Migration)
+const KINDER_NEU = {
+  kategorien: { anonym: { an: true, zeitplan: [] }, drogen: { an: true, zeitplan: [] }, umgehung: { an: true, zeitplan: [] } },
+  ruhezeiten: { messenger: [{ tage: [1, 2, 3, 4, 5, 6, 7], von: '21:00', bis: '06:30' }] },
+  sicher: { suche: true, youtube: 'aus' },
+};
+const MIGRATIONEN = ['kinderschutz-2026-11', 'meldungen-lokal-2026-11'];
+
 const PROFILE = [
   { id: 'standard', name: 'Standard', farbe: '#40e0a0', beschreibung: 'Werbung, Tracker und Schadsoftware', kategorien: { werbung: { an: true, zeitplan: [] }, schadsoftware: { an: true, zeitplan: [] } } },
-  { id: 'kinder', name: 'Kinder', farbe: '#ffb020', beschreibung: 'Zusätzlich Jugendschutz und Glücksspiel, Social Media abends', kategorien: {
+  { id: 'kinder', name: 'Kinder', farbe: '#ffb020', beschreibung: 'Zusätzlich Jugendschutz, Glücksspiel, anonyme Chats, Drogen und Umgehung, Social Media abends', kategorien: {
     werbung: { an: true, zeitplan: [] }, schadsoftware: { an: true, zeitplan: [] }, jugendschutz: { an: true, zeitplan: [] }, gluecksspiel: { an: true, zeitplan: [] },
-    social: { an: true, zeitplan: [{ tage: [1, 2, 3, 4, 5, 6, 7], von: '20:00', bis: '07:00' }] } } },
+    social: { an: true, zeitplan: [{ tage: [1, 2, 3, 4, 5, 6, 7], von: '20:00', bis: '07:00' }] }, ...KINDER_NEU.kategorien },
+    ruhezeiten: KINDER_NEU.ruhezeiten, sicher: KINDER_NEU.sicher },
   { id: 'frei', name: 'Unbeschränkt', farbe: '#8b93a7', beschreibung: 'Nur Schadsoftware wird geblockt', kategorien: { schadsoftware: { an: true, zeitplan: [] } } },
 ];
 
@@ -66,6 +87,11 @@ function vorgaben(env = process.env) {
     geraete: {}, regeln: [], dienste: {}, pausen: { global: 0, geraete: {} },
     protokoll: { tage: 7 },
     sperrseite: { an: false },
+    // Kinderschutz-Meldungen – nur in FAH-Adblock (Ansicht Kinderschutz und Kachel), kein Fremddienst
+    meldungen: { an: true, profile: ['kinder'], kategorien: ['anonym', 'jugendschutz', 'drogen', 'umgehung'], dienste: false, zeitlimit: true, stille: true, stilleMin: 30, ruheMin: 60 },
+    // Schutz unterwegs (DNS-over-TLS/-HTTPS je Gerät): Basisdomain, deren Unternamen auf den Proxy zeigen; Geräte mit eigener Kennung
+    unterwegs: { an: false, basis: '', email: '', geraete: {} },
+    migrationen: [...MIGRATIONEN],
     unifi: { url: env.UNIFI_URL || '', schluessel: null },
     // Weboberfläche hinter einem Reverse-Proxy (NPM): Adressen/Netze, deren X-Forwarded-For für die Anmeldebremse zählt
     web: { vertrauteProxies: (env.VERTRAUTE_PROXIES || '').split(',').map((s) => s.trim()).filter(Boolean) },
@@ -114,8 +140,37 @@ function bereinigen(w, v, melden = (t) => console.warn(`[einstellungen] ${t}`)) 
   w.protokoll.tage = Math.max(1, Math.min(90, Math.round(Number(w.protokoll.tage)) || v.protokoll.tage));
   if (!objekt(w.unifi)) w.unifi = { ...v.unifi };
   if (!objekt(w.web)) w.web = { ...v.web };
+  // Kinderschutz: Profile (Ruhezeiten je Rubrik, sichere Suche, Zeitlimits), Meldungen, unterwegs
+  const RUBRIKEN = new Set(dienstKatalog.GRUPPEN.filter((g) => !g.fest).map((g) => g.id));
+  const fensterOk = (f) => objekt(f) && /^\d{1,2}:\d{2}$/.test(String(f.von)) && /^\d{1,2}:\d{2}$/.test(String(f.bis)) && Array.isArray(f.tage);
+  for (const p of w.profile) {
+    if (!objekt(p.ruhezeiten)) delete p.ruhezeiten;
+    else for (const [r, z] of Object.entries(p.ruhezeiten)) { if (!RUBRIKEN.has(r) || !Array.isArray(z)) delete p.ruhezeiten[r]; else p.ruhezeiten[r] = z.filter(fensterOk); }
+    if (!objekt(p.sicher)) delete p.sicher; else p.sicher = { suche: !!p.sicher.suche, youtube: ['moderat', 'streng'].includes(p.sicher.youtube) ? p.sicher.youtube : 'aus' };
+    if (!objekt(p.limits)) delete p.limits;
+    else for (const [ziel, m] of Object.entries(p.limits)) { if (!limitZielOk(ziel) || !(Number(m) >= 5 && Number(m) <= 1440)) delete p.limits[ziel]; else p.limits[ziel] = Math.round(Number(m)); }
+  }
+  if (!objekt(w.meldungen)) w.meldungen = JSON.parse(JSON.stringify(v.meldungen));
+  const m = w.meldungen, mv = v.meldungen;
+  w.meldungen = {
+    an: !!m.an, profile: Array.isArray(m.profile) ? m.profile.filter((x) => typeof x === 'string').slice(0, 20) : [...mv.profile],
+    kategorien: Array.isArray(m.kategorien) ? m.kategorien.filter((x) => typeof x === 'string').slice(0, 20) : [...mv.kategorien], dienste: !!m.dienste, zeitlimit: m.zeitlimit !== false, stille: m.stille !== false,
+    stilleMin: Math.max(10, Math.min(720, Math.round(Number(m.stilleMin)) || mv.stilleMin)), ruheMin: Math.max(5, Math.min(1440, Math.round(Number(m.ruheMin)) || mv.ruheMin)),
+  };
+  if (!objekt(w.unterwegs)) w.unterwegs = JSON.parse(JSON.stringify(v.unterwegs));
+  const u = w.unterwegs;
+  w.unterwegs = { kurznamen: u.kurznamen ? 1 : 0, an: !!u.an, basis: /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(String(u.basis || '')) ? String(u.basis) : '', email: /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(u.email || '')) ? String(u.email) : '', geraete: {} };
+  for (const [gid, g] of Object.entries(objekt(u.geraete) ? u.geraete : {})) if (objekt(g) && /^dns-[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(String(g.kennung)) && /^[A-Za-z0-9_-]{20,64}$/.test(String(g.geheim))) w.unterwegs.geraete[gid] = { kennung: g.kennung, geheim: g.geheim, an: g.an !== false };
   w.web.vertrauteProxies = (Array.isArray(w.web.vertrauteProxies) ? w.web.vertrauteProxies : []).filter((n) => { try { netz(n); return true; } catch (e) { melden(`vertrauter Proxy „${n}“ ungültig – übersprungen`); return false; } });
   return w;
+}
+
+// Ziel eines Zeitlimits: „dienst:<id>“ oder „rubrik:<id>“ (Hilfe nie)
+function limitZielOk(ziel) {
+  const [art, id] = String(ziel).split(':');
+  if (art === 'dienst') { const d = dienstKatalog.DIENSTE.find((x) => x.id === id); return !!d && !d.fest; }
+  if (art === 'rubrik') return dienstKatalog.GRUPPEN.some((g) => g.id === id && !g.fest);
+  return false;
 }
 
 function schluesselAus(geheimnis) { return crypto.createHash('sha256').update(`fah-adblock|${geheimnis}`).digest(); }
@@ -149,8 +204,25 @@ class Einstellungen {
     if (!gelesen) { this.werte = v; this.speichern(); return this; }
     // Neue Vorgaben ergänzen (neue Listen/Kategorien/Profile), vorhandene Werte bleiben
     if (typeof gelesen !== 'object' || Array.isArray(gelesen)) gelesen = {};
-    const w = { ...v, ...gelesen, dns: { ...v.dns, ...(gelesen.dns || {}) }, unifi: { ...v.unifi, ...(gelesen.unifi || {}) }, protokoll: { ...v.protokoll, ...(gelesen.protokoll || {}) }, pausen: { global: 0, geraete: {}, ...(gelesen.pausen || {}) }, web: { ...v.web, ...(gelesen.web || {}) } };
+    const w = { ...v, ...gelesen, dns: { ...v.dns, ...(gelesen.dns || {}) }, unifi: { ...v.unifi, ...(gelesen.unifi || {}) }, protokoll: { ...v.protokoll, ...(gelesen.protokoll || {}) }, pausen: { global: 0, geraete: {}, ...(gelesen.pausen || {}) }, web: { ...v.web, ...(gelesen.web || {}) },
+      meldungen: { ...v.meldungen, ...(gelesen.meldungen || {}) }, unterwegs: { ...v.unterwegs, ...(gelesen.unterwegs || {}) } };
     bereinigen(w, v);
+    // Migrationen (je einmal): Kinderschutz 23.11.2026 – das Profil „Kinder“ bekommt anonyme Chats, Drogen, Umgehung,
+    // Messenger-Nachtruhe und sichere Suche; was dort schon eingestellt ist, bleibt
+    const erledigt = new Set(Array.isArray(gelesen.migrationen) ? gelesen.migrationen.filter((x) => typeof x === 'string') : []);
+    let migriert = false;
+    if (!erledigt.has('kinderschutz-2026-11')) {
+      const k = w.profile.find((p) => p.id === 'kinder');
+      if (k) {
+        for (const [kid, kw] of Object.entries(KINDER_NEU.kategorien)) if (!k.kategorien[kid]) k.kategorien[kid] = JSON.parse(JSON.stringify(kw));
+        if (!k.ruhezeiten) k.ruhezeiten = JSON.parse(JSON.stringify(KINDER_NEU.ruhezeiten));
+        if (!k.sicher) k.sicher = { ...KINDER_NEU.sicher };
+      }
+      erledigt.add('kinderschutz-2026-11'); migriert = true;
+    }
+    // ntfy entfernt (Betreiber 23.11.2026): Meldungen laufen jetzt in FAH-Adblock selbst – einmalig einschalten
+    if (!erledigt.has('meldungen-lokal-2026-11')) { w.meldungen.an = true; erledigt.add('meldungen-lokal-2026-11'); migriert = true; }
+    w.migrationen = [...erledigt];
     // Kategorien: neue ergänzen, Beschreibung/Art der Vorgaben nachziehen
     for (const k of v.kategorien) { const x = w.kategorien.find((y) => y.id === k.id); if (!x) w.kategorien.push(k); else Object.assign(x, { beschreibung: x.beschreibung || k.beschreibung, ...(k.art ? { art: k.art } : {}) }); }
     // Vorgabelisten: neue einmalig ergänzen (bereits angebotene nicht erneut), Beschreibungen nachziehen
@@ -164,7 +236,7 @@ class Einstellungen {
     }
     w.vorgabenListen = [...angeboten];
     this.werte = w;
-    if (geaendert || !gelesen.vorgabenListen) this.speichern();
+    if (geaendert || migriert || !gelesen.vorgabenListen) this.speichern();
     return this;
   }
   speichern() {
@@ -185,7 +257,11 @@ class Einstellungen {
     this.aendern((w) => { w.unifi.url = url; if (schluessel !== undefined && schluessel !== null && schluessel !== '') w.unifi.schluessel = verschluesseln(schluessel, this.geheimnis); });
   }
   // Für Sicherung/Anzeige ohne Geheimnisse
-  oeffentlich() { const w = JSON.parse(JSON.stringify(this.werte)); w.unifi = { url: w.unifi.url, schluesselGesetzt: !!this.unifiZugang().schluessel }; return w; }
+  oeffentlich() {
+    const w = JSON.parse(JSON.stringify(this.werte));
+    w.unifi = { url: w.unifi.url, schluesselGesetzt: !!this.unifiZugang().schluessel };
+    return w;
+  }
 }
 
-module.exports = { Einstellungen, vorgaben, bereinigen, verschluesseln, entschluesseln, KATEGORIEN, LISTEN, PROFILE };
+module.exports = { Einstellungen, vorgaben, bereinigen, verschluesseln, entschluesseln, limitZielOk, KATEGORIEN, LISTEN, PROFILE, KINDER_NEU };

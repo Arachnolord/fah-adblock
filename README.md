@@ -24,6 +24,20 @@ im FAH-Stil. Entwurf: `docs/superpowers/specs/2026-09-15-fah-adblock-design.md`.
   Social, NSFW, Gambling – je Kategorie; eigene Listen per URL.
 - **Filter**: Pause (global/Gerät, 5/15/60 min) → Freigaben → eigene Sperren → Kategorien des Geräteprofils
   (mit Wochen-Zeitplänen, Fenster über Mitternacht), CNAME-Tarnung, Firefox-DoH-Kanarie.
+- **Kinderschutz** (Ansicht „Kinderschutz“ – alles, was ein DNS-Filter für Kinder leisten kann):
+  - Kategorien **Anonyme Chats & Fragen-Apps** (eigene Liste: NGL, Tellonym, Zufalls-Videochats …), **Drogen & Vaping**,
+    **Umgehung** (VPN/Proxy/fremdes DNS/iCloud Privat-Relay), **Piraterie**; Betrugsliste optional.
+  - **Hilfsangebote** (Nummer gegen Kummer, krisenchat, JUUUPORT …) fest geschützt – nie sperrbar.
+  - Je Profil: **sichere Suche** (Google/Bing/DuckDuckGo), **YouTube eingeschränkt**, **Ruhezeiten je Rubrik**
+    (z. B. Messenger nachts), **Tageslimits** je Dienst oder Rubrik mit Zeitkonto und „+15/+30 min“.
+  - **Altersvorlagen** Grundschule, Klasse 5–7, ab 14.
+  - **Meldungen in FAH-Adblock** (gebündelt, mit Ruhezeit, Kachel im Schutzschild) und **Umgehungsverdacht** (Gerät im WLAN, fragt aber nicht mehr);
+    optional **aufs Handy**: Web-Push (FAH-Adblock als App auf dem Home-Bildschirm, RFC 8291/8292 ohne Fremdpakete) und/oder ntfy –
+    nach draußen nur Gerät, Art und Anzahl; Ersatz bekommt alles verschlüsselt und springt bei Ausfall ein.
+  - **Schutz unterwegs**: je Gerät ein kurzer Name (`dns-<gerät>.<basis>`) – Android „Privates DNS“ (DNS-over-TLS,
+    Port 853) und iPhone-Profil (DNS-over-HTTPS über FAH-Proxy); unter diesen Namen nur DNS, nie Oberfläche oder API.
+    FAH-Adblock legt die Einträge in FAH-Proxy (Gruppe „AdBlock DNS Domains“, eingeschränktes Dienst-Konto) und die
+    UCG-Portfreigabe selbst an und löscht sie wieder; Zertifikate kommen von FAH-Proxy, Fail-over inklusive.
 - **Rettung**: zuletzt geblockte Domains eines Geräts, ein Klick gibt frei (Gerät 1 h / dauerhaft / alle).
 - **Sperrseite**: gesperrte Seiten zeigen über FAH-Proxy den Hinweis „Diese Seite ist gesperrt“ mit Domain und Grund;
   Werbung und Tracker bleiben stumm geblockt. Das Zertifikat kommt einmal auf jedes Gerät.

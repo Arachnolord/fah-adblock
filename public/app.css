@@ -142,7 +142,7 @@ main{padding:18px max(16px,3vw) 40px;max-width:1500px;margin:0 auto}
 /* ── Formulare ────────────────────────────────────── */
 .feld{display:flex;flex-direction:column;gap:6px;min-width:0}
 .feld label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700}
-input[type=text],input[type=password],input[type=search],input[type=url],input[type=number],input[type=time],select,textarea{background:var(--bg2);border:1px solid var(--rand2);border-radius:10px;padding:9px 12px;min-width:0;outline:none}
+input[type=text],input[type=password],input[type=search],input[type=url],input[type=email],input[type=number],input[type=time],select,textarea{background:var(--bg2);border:1px solid var(--rand2);border-radius:10px;padding:9px 12px;min-width:0;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--akzent);box-shadow:0 0 0 3px rgba(92,200,255,.18)}
 .formzeile{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
 .formzeile>.feld{flex:1 1 160px}
@@ -280,3 +280,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--akzent);box-shadow:0 
 .knopf[aria-pressed="true"]{background:var(--akzent);color:#04101c;border-color:transparent;font-weight:700;box-shadow:0 0 14px rgba(92,200,255,.35)}
 .knopf[aria-pressed="true"]:hover{border-color:transparent;filter:brightness(1.08)}
 :root[data-theme=hell] .knopf[aria-pressed="true"]{color:#fff;box-shadow:0 0 10px rgba(11,132,198,.35)}
+/* Kinderschutz (23.11.2026) */
+.chipwahl{display:flex;flex-wrap:wrap;gap:6px}
+.chipwahl .chip{cursor:pointer;display:inline-flex;align-items:center;gap:6px;user-select:none}
+.zkbalken{height:8px;border-radius:6px;background:var(--rand2);overflow:hidden;margin-top:4px}
+.zkbalken i{display:block;height:100%;border-radius:6px}
+.kz[data-ansicht]:hover{border-color:var(--rand2)}
+.zeile.umbruch .haupt b,.zeile.umbruch .haupt small{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.zeile.block{display:block}
+.zeile.block .knopfreihe{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.dinfo .dhinweis{white-space:normal!important;overflow-wrap:anywhere}
+@media (max-width:700px){.balkenzeile .dinfo .dhinweis{display:block;margin-left:0}.untennavi button{padding:6px 1px;font-size:9px}}
+.hinweisdialog{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:45;width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:18px}
+.hinweisdialog h3{margin:0 0 10px;font-size:16px;overflow-wrap:anywhere}
+.dialoginhalt{font-size:14px;line-height:1.5}
+.dialogschritte{margin:0 0 10px;padding-left:20px}
+.dialogname{display:block;padding:10px 12px;border:1px solid var(--rand2);border-radius:10px;background:var(--bg2);overflow-wrap:anywhere;user-select:all;margin-bottom:8px}
+.dialogknoepfe{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px}
+/* Aufs Handy (Web-Push, ntfy) */
+.hinweiszeile{font-size:13px;line-height:1.5;color:var(--text2);border:1px dashed var(--rand2);border-radius:10px;padding:9px 11px;overflow-wrap:anywhere}
+#handyblock .zeile .knopf{flex:0 0 auto}

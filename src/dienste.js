@@ -39,6 +39,8 @@ const GRUPPEN = [
   { id: 'vpn', name: 'VPN & Umgehung', vorgabe: 'listen' },
   { id: 'smarthome', name: 'Smart Home & Geräte', vorgabe: 'frei' },
   { id: 'system', name: 'Geräte & System', vorgabe: 'frei' },
+  // Kinderschutz (23.11.2026): Beratungs- und Notfallstellen – fest geschützt, weder hier noch im Profil sperrbar, auch nicht von Ruhezeiten oder Zeitlimits
+  { id: 'hilfe', name: 'Hilfe & Beratung', vorgabe: 'frei', fest: true },
 ];
 
 const ROH = [
@@ -389,10 +391,14 @@ const ROH = [
   ['cookiebanner', 'Cookie-Banner', '🍪', 'system', 'usercentrics.eu cookiebot.com consentmanager.net onetrust.com cookielaw.org privacy-center.org privacy-mgmt.com didomi.io', 'Ist das Banner gesperrt, bleiben viele Seiten leer oder lassen sich nicht bedienen', 'analytics.consentmanager.net imgsct.cookiebot.com privacy-analytics-proxy.cookiebot.com sst.cookiebot.com analytics.didomi.io history-logs.didomi.io metrics.didomi.io smetrics.onetrust.com'],
 ];
 
+// Hilfsangebote aus src/daten/kinderschutz.js
+ROH.push(...require('./daten/kinderschutz').HILFE.map(([id, name, symbol, domains, hinweis]) => [id, name, symbol, 'hilfe', domains, hinweis]));
+
 const VORGABE = Object.fromEntries(GRUPPEN.map((g) => [g.id, g.vorgabe]));
+const FEST = new Set(GRUPPEN.filter((g) => g.fest).map((g) => g.id));
 // Einzelne Dienste mit eigener Vorgabe, abweichend von ihrer Rubrik (Betreiber-Vorgabe 15.11.2026: Pokémon GO und PokeRaid sind ab Werk für alle Geräte frei)
 const EIGENE_VORGABE = { pokemongo: 'frei', pokeraid: 'frei' };
-const DIENSTE = ROH.map(([id, name, symbol, gruppe, domains, hinweis, ausser, mitbenutzt]) => ({ id, name, symbol, gruppe, vorgabe: EIGENE_VORGABE[id] || VORGABE[gruppe] || 'listen', domains: domains.split(' '), ...(hinweis ? { hinweis } : {}), ...(ausser ? { ausser: ausser.split(' ') } : {}), ...(mitbenutzt ? { mitbenutzt: mitbenutzt.split(' ') } : {}) }));
+const DIENSTE = ROH.map(([id, name, symbol, gruppe, domains, hinweis, ausser, mitbenutzt]) => ({ id, name, symbol, gruppe, ...(FEST.has(gruppe) ? { fest: true } : {}), ...(EIGENE_VORGABE[id] === 'frei' && VORGABE[gruppe] !== 'frei' ? { einzelnFrei: true } : {}), vorgabe: EIGENE_VORGABE[id] || VORGABE[gruppe] || 'listen', domains: domains.split(' '), ...(hinweis ? { hinweis } : {}), ...(ausser ? { ausser: ausser.split(' ') } : {}), ...(mitbenutzt ? { mitbenutzt: mitbenutzt.split(' ') } : {}) }));
 
 // Domain-Endung → Dienst
 function index(dienste = DIENSTE) {
@@ -427,6 +433,7 @@ function ausnahmen(dienste = DIENSTE) {
 
 // Zustand eines Dienstes: aus den Einstellungen, sonst die Vorgabe der Rubrik
 function modusVon(dienst, einstellungen = {}) {
+  if (dienst.fest) return { modus: 'frei', geltung: 'alle' };
   const e = einstellungen[dienst.id];
   if (!e) return { modus: dienst.vorgabe, geltung: 'alle' };
   if (e.gesperrt) return { modus: 'sperren', geltung: e.geltung || 'alle' };   // ältere Einstellungen

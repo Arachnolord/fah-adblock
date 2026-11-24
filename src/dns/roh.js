@@ -80,11 +80,12 @@ function cnameZiele(buf) {
 
 // Für den Client: Kopie mit dessen ID, TTLs um das Alter verringert, OPT entfernt, wenn der Client kein EDNS
 // sprach (und OPT der letzte Eintrag ist), bei UDP über der Grenze → nur Kopf + Frage mit TC-Bit.
-function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true } = {}) {
+// maxTtl > 0: TTLs höchstens so lang (Zeitlimit – das Gerät soll bald wieder fragen)
+function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true, maxTtl = 0 } = {}) {
   let buf = Buffer.from(antwort);
   const liste = eintraege(buf);   // wirft bei kaputten Paketen
   buf.writeUInt16BE(id, 0);
-  if (alterSek > 0) for (const e of liste) if (e.typ !== TYP_OPT) buf.writeUInt32BE(Math.max(0, e.ttl - alterSek), e.ttlOffset);
+  if (alterSek > 0 || maxTtl > 0) for (const e of liste) if (e.typ !== TYP_OPT) { let t = Math.max(0, e.ttl - alterSek); if (maxTtl > 0) t = Math.min(t, maxTtl); buf.writeUInt32BE(t, e.ttlOffset); }
   if (!edns) {
     const opt = liste.find((e) => e.typ === TYP_OPT);
     if (opt && opt.ende === buf.length) { buf = buf.subarray(0, opt.start); buf.writeUInt16BE(Math.max(0, buf.readUInt16BE(10) - 1), 10); }

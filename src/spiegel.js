@@ -44,6 +44,7 @@ function holen(url, code, zeitlimit_ms = 10000, eigene = '') {
     let u; try { u = new URL('/api/spiegel/stand', url); } catch (e) { return nein(new Error('Adresse des Haupts ungültig')); }
     const mod = u.protocol === 'https:' ? https : http;
     const req = mod.get(u, { headers: { Authorization: `Bearer ${code}`, 'User-Agent': 'FAH-Adblock-Ersatz', ...(eigene ? { 'X-FAH-Adblock-Url': eigene } : {}) }, timeout: zeitlimit_ms, rejectUnauthorized: false }, (res) => {
+      const nein0 = nein; nein = (e) => nein0(Object.assign(e, { antwort: true }));   // der Haupt läuft – er hat geantwortet
       let t = ''; res.setEncoding('utf8');
       res.on('data', (d) => { t += d; if (t.length > 5e6) req.destroy(new Error('Antwort zu groß')); });
       res.on('end', () => {
@@ -55,6 +56,22 @@ function holen(url, code, zeitlimit_ms = 10000, eigene = '') {
     });
     req.on('timeout', () => req.destroy(new Error('Haupt antwortet nicht (Zeitüberschreitung)')));
     req.on('error', (e) => nein(e.code === 'ECONNREFUSED' ? new Error('Haupt nicht erreichbar (Verbindung abgewiesen)') : e));
+  });
+}
+
+/** POST mit Kopplungscode → JSON (Ersatz → Haupt: Meldungen, Zeitkonto, „zuletzt gesehen“) */
+function senden(url, code, daten, zeitlimit_ms = 10000) {
+  return new Promise((ok, nein) => {
+    let u; try { u = new URL('/api/spiegel/meldung', url); } catch (e) { return nein(new Error('Adresse des Haupts ungültig')); }
+    const mod = u.protocol === 'https:' ? https : http, text = JSON.stringify(daten || {});
+    const req = mod.request(u, { method: 'POST', headers: { Authorization: `Bearer ${code}`, 'User-Agent': 'FAH-Adblock-Ersatz', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) }, timeout: zeitlimit_ms, rejectUnauthorized: false }, (res) => {
+      let t = ''; res.setEncoding('utf8');
+      res.on('data', (d) => { t += d; if (t.length > 1e6) req.destroy(new Error('Antwort zu groß')); });
+      res.on('end', () => { if (res.statusCode !== 200) return nein(new Error(`Haupt nimmt Meldungen nicht an (HTTP ${res.statusCode})`)); try { ok(JSON.parse(t)); } catch (e) { nein(new Error('Antwort des Haupts ist kein JSON')); } });
+    });
+    req.on('timeout', () => req.destroy(new Error('Haupt antwortet nicht (Zeitüberschreitung)')));
+    req.on('error', nein);
+    req.end(text);
   });
 }
 
@@ -90,8 +107,8 @@ async function partnerAnmelden(basis, name, passwort, zeitlimit_ms = 30000) {
 
 class Spiegel {
   /** @param {{verzeichnis:string, einst, geheimnis:string, version:string, anwenden:(s:object)=>void, holen?:Function, jetzt?:()=>number}} o */
-  constructor({ verzeichnis, einst, geheimnis, version, anwenden, holen: holenFn = holen, jetzt = () => Date.now(), eigeneUrl = '', anmelden = partnerAnmelden }) {
-    Object.assign(this, { einst, geheimnis, version, anwenden, holenFn, jetzt, eigeneUrl, anmelden });
+  constructor({ verzeichnis, einst, geheimnis, version, anwenden, holen: holenFn = holen, senden: sendenFn = senden, jetzt = () => Date.now(), eigeneUrl = '', anmelden = partnerAnmelden, austausch = null }) {
+    Object.assign(this, { einst, geheimnis, version, anwenden, holenFn, sendenFn, jetzt, eigeneUrl, anmelden, austausch });
     this.datei = path.join(verzeichnis, 'spiegel.json');
     this.z = { rolle: 'allein' };
     try { this.z = { rolle: 'allein', ...JSON.parse(fs.readFileSync(this.datei, 'utf8')) }; } catch (e) {}
@@ -100,6 +117,8 @@ class Spiegel {
   }
   speichern() { fs.writeFileSync(this.datei + '.tmp', JSON.stringify(this.z, null, 1), { mode: 0o600 }); fs.renameSync(this.datei + '.tmp', this.datei); }
   get rolle() { return this.z.rolle || 'allein'; }
+  /** Wann der Haupt zuletzt geantwortet hat (Abgleich erfolgreich ODER eine HTTP-Antwort, z. B. Code abgelehnt) – für die Übernahme */
+  hauptZuletzt() { return Math.max(this.z.letzter_abgleich || 0, this.z.haupt_gesehen || 0); }
   istErsatz() { return this.rolle === 'ersatz'; }
   status() {
     const z = this.z;
@@ -122,6 +141,12 @@ class Spiegel {
     let u = null; try { u = url ? adresse(url) : null; } catch (e) {}
     this.z.ersatz = { ip: ip || null, zeit: this.jetzt(), url: u || (this.z.ersatz && this.z.ersatz.url) || null }; this.speichern();
     return standVon(this.einst, this.version);
+  }
+  /** Haupt: Meldungen/Zeitkonto des Ersatzes annehmen (Kinderschutz) → Antwort für den Ersatz (z. B. aufgebrauchte Zeitlimits) */
+  meldungFuer(code, daten) {
+    if (this.rolle !== 'haupt') { const f = new Error('Diese Instanz ist kein Haupt'); f.status = 409; throw f; }
+    if (!code || !gleich(hash(code), this.z.code_hash)) { const f = new Error('Kopplungscode falsch'); f.status = 401; throw f; }
+    return this.austausch ? this.austausch.empfangen(daten || {}, code) : {};
   }
   /** Diese Instanz wird Ersatz des Haupts unter `url` – erst nach erfolgreichem Probe-Abgleich. */
   async ersatzWerden(url, code) {
@@ -188,7 +213,13 @@ class Spiegel {
         const h = hash(JSON.stringify(stand.einstellungen));
         if (h !== this.z.stand_hash) { this.anwenden(stand.einstellungen, { pausen: true }); this.z.stand_hash = h; this.z.letzte_aenderung = this.jetzt(); }
         this.z.letzter_abgleich = this.jetzt(); this.z.fehler = null;
-      } catch (e) { this.z.fehler = e.message; }
+        // Kinderschutz: eigene Ereignisse und Nutzung an den Haupt, dessen „aufgebraucht“ übernehmen (Fehler stören den Abgleich nicht)
+        if (this.austausch) {
+          const daten = this.austausch.sammeln(), code = entschluesseln(this.z.code, this.geheimnis);
+          try { this.austausch.uebernehmen(await this.sendenFn(this.z.haupt_url, code, daten), code); this.z.meldung_fehler = null; }
+          catch (e) { this.austausch.zurueck?.(daten); this.z.meldung_fehler = e.message; }
+        }
+      } catch (e) { this.z.fehler = e.message; if (e.antwort) this.z.haupt_gesehen = this.jetzt(); }
       this.speichern();
       return this.status();
     })();
@@ -203,4 +234,4 @@ class Spiegel {
   stoppen() { if (this.timer) clearInterval(this.timer); this.timer = null; }
 }
 
-module.exports = { Spiegel, standVon, holen, istLeer, partnerAnmelden, ABGLEICH_MS };
+module.exports = { Spiegel, standVon, holen, senden, istLeer, partnerAnmelden, ABGLEICH_MS };

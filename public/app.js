@@ -18,8 +18,8 @@
   const wenigBewegung = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const SCHILD = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#40e0a0"/><stop offset="1" stop-color="#5cc8ff"/></linearGradient></defs><path d="M32 4 54 12v18c0 14-9.4 24.6-22 30C19.4 54.6 10 44 10 30V12Z" fill="none" stroke="url(#sg)" stroke-width="4" stroke-linejoin="round"/><path d="m22 32 7 7 13-15" fill="none" stroke="url(#sg)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const ANSICHTEN = [
-    { id: 'schild', name: 'Schutzschild', kurz: 'Schild', symbol: '🛡️' }, { id: 'geraete', name: 'Geräte', kurz: 'Geräte', symbol: '💻' }, { id: 'protokoll', name: 'Protokoll', kurz: 'Protokoll', symbol: '📜' },
-    { id: 'listen', name: 'Listen & Regeln', kurz: 'Listen', symbol: '🧱' }, { id: 'dienste', name: 'Dienste', kurz: 'Dienste', symbol: '📺' }, { id: 'profile', name: 'Profile', kurz: 'Profile', symbol: '👪' },
+    { id: 'schild', name: 'Schutzschild', kurz: 'Schild', symbol: '🛡️' }, { id: 'geraete', name: 'Geräte', kurz: 'Geräte', symbol: '💻' }, { id: 'protokoll', name: 'Protokoll', kurz: 'Protok.', symbol: '📜' },
+    { id: 'listen', name: 'Listen & Regeln', kurz: 'Listen', symbol: '🧱' }, { id: 'dienste', name: 'Dienste', kurz: 'Dienste', symbol: '📺' }, { id: 'profile', name: 'Profile', kurz: 'Profile', symbol: '👪' }, { id: 'kinderschutz', name: 'Kinderschutz', kurz: 'Kinder', symbol: '🧒' },
     { id: 'statistik', name: 'Statistik', kurz: 'Statistik', symbol: '📊' }, { id: 'einstellungen', name: 'Einstellungen', kurz: 'Einst.', symbol: '⚙️' },
   ];
   const ZEITRAEUME = [[24, '24 h'], [168, '7 Tage'], [720, '1 Monat']];
@@ -53,6 +53,17 @@
       box.onclick = (e) => { const b = e.target.closest('button'); if (b) zu(+b.dataset.i >= 0 ? optionen[+b.dataset.i].wert : null); };
       document.body.append(schleier, box); box.querySelector('button')?.focus();
     });
+  }
+
+  // Hinweisfenster mit eigenem Inhalt (Text bricht um) und Knöpfen [{text, art, fn}]
+  function hinweisDialog(titel, html, knoepfe = []) {
+    const schleier = document.createElement('div'); schleier.className = 'schleier';
+    const box = document.createElement('div'); box.className = 'karte hinweisdialog'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', titel);
+    box.innerHTML = `<h3>${esc(titel)}</h3><div class="dialoginhalt">${html}</div><div class="dialogknoepfe">${knoepfe.map((k, i) => `<button class="knopf ${k.art || ''}" data-i="${i}">${esc(k.text)}</button>`).join('')}<button class="knopf leise" data-i="-1">Schließen</button></div>`;
+    const zu = () => { schleier.remove(); box.remove(); };
+    schleier.onclick = zu;
+    box.onclick = (e) => { const b = e.target.closest('button[data-i]'); if (!b) return; const k = knoepfe[+b.dataset.i]; if (k) k.fn?.(); zu(); };
+    document.body.append(schleier, box); box.querySelector('button')?.focus();
   }
 
   // ── Anmeldung ──────────────────────────────────────────────────────────────
@@ -144,7 +155,7 @@
     S.ansicht = ANSICHTEN.some((a) => a.id === id) ? id : 'schild';
     $$('[data-ansicht]').forEach((b) => b.setAttribute('aria-current', b.dataset.ansicht === S.ansicht ? 'page' : 'false'));
     Buehne.stopp();
-    ({ schild: zeigeSchild, geraete: zeigeGeraete, protokoll: zeigeProtokoll, listen: zeigeListen, dienste: zeigeDienste, profile: zeigeProfile, statistik: zeigeStatistik, einstellungen: zeigeEinstellungen })[S.ansicht]();
+    ({ schild: zeigeSchild, geraete: zeigeGeraete, protokoll: zeigeProtokoll, listen: zeigeListen, dienste: zeigeDienste, profile: zeigeProfile, kinderschutz: zeigeKinderschutz, statistik: zeigeStatistik, einstellungen: zeigeEinstellungen })[S.ansicht]();
     window.scrollTo({ top: 0 });
   }
   function hinweisband() {
@@ -192,7 +203,13 @@
       ['', ms ? `${ms.ms} ms` : '–', 'Antwortzeit', ms ? `verschlüsselt über ${esc(ms.name)}` : 'noch keine Anfrage'],
       [u.sperrseite?.an ? 'gruen' : '', u.sperrseite?.an ? 'an' : 'aus', 'Sperrseite', `${zahl(u.sperrseite?.aufrufe || 0)} Aufrufe seit Start`],
     ];
-    el.innerHTML = karten.map(([art, wert, name, unter]) => `<div class="karte kz ${art}"><div class="wert">${wert}</div><div class="name">${name}</div><div class="unter">${unter}</div></div>`).join('');
+    const ks = u.kinderschutz;
+    if (ks) karten.push(
+      [ks.meldungen.heute ? 'rot' : '', ks.meldungen.an ? zahl(ks.meldungen.heute) : 'aus', 'Kinderschutz-Meldungen', ks.meldungen.letzte ? `zuletzt ${vor(ks.meldungen.letzte.ts)}` : ks.meldungen.an ? 'heute keine' : 'unter Kinderschutz einschalten', 'kinderschutz'],
+      [ks.zeitkonten.aufgebraucht ? 'rot' : '', ks.zeitkonten.geraete ? zahl(ks.zeitkonten.aufgebraucht) : '–', 'Zeitlimits erreicht', ks.zeitkonten.geraete ? `${zahl(ks.zeitkonten.geraete)} ${ks.zeitkonten.geraete === 1 ? 'Gerät' : 'Geräte'} mit Limit` : 'keine Limits festgelegt', 'kinderschutz'],
+      [ks.unterwegs?.an ? 'gruen' : '', ks.unterwegs?.an ? zahl(ks.unterwegs.aktiv) : 'aus', 'Unterwegs geschützt', ks.unterwegs?.an ? `${zahl(ks.unterwegs.geraete)} eingerichtet · letzte Stunde` : 'Mobilfunk-Schutz aus', 'kinderschutz'],
+    );
+    el.innerHTML = karten.map(([art, wert, name, unter, ziel]) => `<div class="karte kz ${art}" ${ziel ? `data-ansicht="${ziel}" role="link" tabindex="0" style="cursor:pointer"` : ''}><div class="wert">${wert}</div><div class="name">${name}</div><div class="unter">${unter}</div></div>`).join('');
     const rate = $('#rate'); if (rate) { const minute = S.live.filter((e) => e.t > Date.now() - 60000).length; rate.textContent = zahl(minute); }
   }
   function geblocktListe(neu) {
@@ -689,7 +706,7 @@
   }
 
   // ── Dienste (Rubriken wie bei AdGuard) ─────────────────────────────────────
-  const dienstStatus = (d, geltungText) => d.modus === 'frei' ? '✓ geschützt' : d.modus === 'sperren' ? `⛔ gesperrt · ${geltungText(d.geltung)}` : '○ nach Listen';
+  const dienstStatus = (d, geltungText) => d.fest ? '🔒 immer erreichbar' : d.modus === 'frei' ? '✓ geschützt' : d.modus === 'sperren' ? `⛔ gesperrt · ${geltungText(d.geltung)}` : '○ nach Listen';
   async function zeigeDienste() {
     const [dl, geraete] = await Promise.all([api('/api/dienste'), S.geraete ? S.geraete : api('/api/geraete')]);
     S.geraete = geraete;
@@ -704,13 +721,14 @@
           <div class="feld"><label for="dsuche">Dienst oder Domain suchen</label><input id="dsuche" type="search" value="${esc(S.dienstSuche || '')}" placeholder="z. B. youtube oder tiktok.com"></div>
           <div class="feld" style="flex:0 1 200px"><label for="dart">Anzeigen</label><select id="dart">${[['alle', 'alle Dienste'], ['frei', 'nur geschützte'], ['listen', 'nur nach Listen'], ['sperren', 'nur gesperrte']].map(([v, t]) => `<option value="${v}" ${nurArt === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
         </div></div>
-        ${dl.gruppen.map((gr) => { const liste = dl.dienste.filter((d) => d.gruppe === gr.id && passt(d)); return liste.length ? `<div class="dienstgruppe"><small>${esc(gr.name)} · Vorgabe: ${gr.vorgabe === 'frei' ? 'geschützt' : 'nach Listen'}</small><div class="dienstraster">${liste.map((d) => `<button class="dienst ${d.modus === 'sperren' ? 'gesperrt' : d.modus === 'listen' ? 'neutral' : ''}" data-dienst="${esc(d.id)}" title="${esc(d.name + ' – ' + (d.hinweis ? d.hinweis + ' · ' : '') + d.domains.join(', ') + (d.ausser?.length ? ' · nicht geschützt, hier entscheiden weiter die Listen (reine Mess-Adressen): ' + d.ausser.join(', ') : ''))}"><span class="dsymbol">${esc(d.symbol)}</span><span class="dname">${esc(d.name)}</span><span class="dstatus">${esc(dienstStatus(d, geltungText))}</span></button>`).join('')}</div></div>` : ''; }).join('') || '<div class="leer">Kein Dienst passt zur Suche.</div>'}
+        ${dl.gruppen.map((gr) => { const liste = dl.dienste.filter((d) => d.gruppe === gr.id && passt(d)); return liste.length ? `<div class="dienstgruppe"><small>${esc(gr.name)} · ${gr.fest ? 'immer erreichbar, nicht sperrbar' : `Vorgabe: ${gr.vorgabe === 'frei' ? 'geschützt' : 'nach Listen'}`}</small><div class="dienstraster">${liste.map((d) => `<button class="dienst ${d.modus === 'sperren' ? 'gesperrt' : d.modus === 'listen' ? 'neutral' : ''}" data-dienst="${esc(d.id)}" title="${esc(d.name + ' – ' + (d.hinweis ? d.hinweis + ' · ' : '') + d.domains.join(', ') + (d.ausser?.length ? ' · nicht geschützt, hier entscheiden weiter die Listen (reine Mess-Adressen): ' + d.ausser.join(', ') : ''))}"><span class="dsymbol">${esc(d.symbol)}</span><span class="dname">${esc(d.name)}</span><span class="dstatus">${esc(dienstStatus(d, geltungText))}</span></button>`).join('')}</div></div>` : ''; }).join('') || '<div class="leer">Kein Dienst passt zur Suche.</div>'}
       </section>`;
     $('#dsuche').oninput = (e) => { S.dienstSuche = e.target.value; clearTimeout(S.dienstUhr); S.dienstUhr = setTimeout(() => { zeigeDienste().then(() => { const f = $('#dsuche'); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }); }, 250); };
     $('#dart').onchange = (e) => { S.dienstArt = e.target.value; zeigeDienste(); };
     $('#haupt').onclick = async (e) => {
       const b = e.target.closest('[data-dienst]'); if (!b) return;
       const d = dl.dienste.find((x) => x.id === b.dataset.dienst);
+      if (d.fest) return toast(`${d.name} ist ein Hilfsangebot – immer erreichbar, in keinem Profil sperrbar`);
       const wahl = await waehle(`${d.symbol} ${d.name}`, [
         { text: '✓ Geschützt – keine Liste blockt ihn', wert: { modus: 'frei' }, art: 'gruen' },
         { text: '○ Nach Listen – Blocklisten und Profil entscheiden', wert: { modus: 'listen' } },
@@ -732,7 +750,7 @@
     ${PROFILRUBRIKEN.map((gid) => dl.gruppen.find((g) => g.id === gid)).filter(Boolean).map((gr) => `<div class="profilgruppe" data-pgruppe="${esc(gr.id)}"><small>${esc(gr.name)}<span class="pgknoepfe"><button type="button" class="knopf klein leise" data-pgalle="sperren">alle sperren</button><button type="button" class="knopf klein leise" data-pgalle="standard">zurücksetzen</button></span></small><div class="dienstchips">${dl.dienste.filter((d) => d.gruppe === gr.id).map((d) => { const w = (p.dienste || {})[d.id] || 'standard'; return `<button type="button" class="dienstchip ${w}" data-pdienst="${esc(d.id)}" data-wert="${w}" title="${esc(d.domains.join(', '))}">${esc(d.symbol)} ${esc(d.name)}<i>${w === 'frei' ? 'erlaubt' : w === 'sperren' ? 'gesperrt' : w === 'listen' ? 'nach Listen' : 'Standard'}</i></button>`; }).join('')}</div></div>`).join('')}
   </details>`;
   async function zeigeProfile() {
-    const [pr, geraete, dl] = await Promise.all([api('/api/profile'), api('/api/geraete'), api('/api/dienste')]);
+    const [pr, geraete, dl, vorlagen] = await Promise.all([api('/api/profile'), api('/api/geraete'), api('/api/dienste'), api('/api/vorlagen')]);
     S.geraete = geraete;
     const karte = (p) => `<section class="karte" data-profilid="${esc(p.id)}" style="border-top:3px solid ${esc(p.farbe)}"><div class="kartekopf"><input type="color" value="${esc(p.farbe)}" data-farbe style="width:28px;height:28px;border:0;background:none;padding:0" aria-label="Farbe">
         <input type="text" value="${esc(p.name)}" data-name style="font-weight:700;text-transform:none;letter-spacing:0;font-size:15px;flex:1;min-width:0" aria-label="Name">
@@ -743,12 +761,14 @@
           <div data-fenster>${(kw.zeitplan || []).map(fensterHtml).join('')}</div>
           ${kw.an ? `<div class="wochenleiste" title="rot = gesperrt (Woche Mo–So)">${wochenleiste(kw.zeitplan)}</div><button class="knopf klein leise" data-fensterneu style="margin-top:6px">+ Zeitfenster</button>` : ''}</div></div>`; }).join('')}
         ${profilDienstHtml(p, dl)}
+        ${kinderschutzHtml(p, dl, vorlagen)}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap"><small style="color:var(--muted)">${((n) => `${n} ${n === 1 ? 'Gerät' : 'Geräte'}`)(geraete.geraete.filter((g) => g.profil === p.id).length)}</small><button class="knopf gruen klein" data-profilspeichern>Speichern</button></div></div></section>`;
-    $('#haupt').innerHTML = `<div class="suchleiste"><b style="font-size:16px">Profile & Zeitpläne</b><button class="knopf klein" id="profilneu" style="margin-left:auto">+ Profil</button></div>${info('Ein Profil legt fest, welche Kategorien für die zugeordneten Geräte gesperrt sind. <b>Schalter an</b> = Kategorie gesperrt. Ohne Zeitfenster gilt die Sperre immer; mit Zeitfenstern nur in diesen Zeiten (ein Fenster über Mitternacht wie 20:00–07:00 gehört zum Starttag). Neue Geräte bekommen automatisch „Standard“. Änderungen wirken nach „Speichern“ sofort.')}<div style="height:12px"></div>
+    $('#haupt').innerHTML = `<div class="suchleiste"><b style="font-size:16px">Profile & Zeitpläne</b><button class="knopf klein leise" id="profilvorlage" style="margin-left:auto">+ aus Altersvorlage</button><button class="knopf klein" id="profilneu">+ Profil</button></div>${info('Ein Profil legt fest, welche Kategorien für die zugeordneten Geräte gesperrt sind. <b>Schalter an</b> = Kategorie gesperrt. Ohne Zeitfenster gilt die Sperre immer; mit Zeitfenstern nur in diesen Zeiten (ein Fenster über Mitternacht wie 20:00–07:00 gehört zum Starttag). Neue Geräte bekommen automatisch „Standard“. Änderungen wirken nach „Speichern“ sofort.')}<div style="height:12px"></div>
       <div class="raster" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">${pr.profile.map(karte).join('')}</div>
       <section class="karte" style="margin-top:16px"><div class="kartekopf">💻 Geräte zuordnen</div>${info('Welches Profil für welches Gerät gilt – wirkt sofort, ohne Speichern.')}<div class="zeilen">${geraete.geraete.map((g) => `<div class="zeile" data-geraet="${esc(g.id)}"><span class="zsymbol">${geraetSymbol(g)}</span><div class="haupt"><b>${esc(g.name)}</b><small>${esc(g.ip || g.id)}</small></div><select data-zuordnen>${pr.profile.map((p) => `<option value="${esc(p.id)}" ${p.id === g.profil ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>`).join('') || '<div class="leer">Noch keine Geräte gesehen.</div>'}</div></section>`;
     const haupt = $('#haupt');
     haupt.onclick = async (e) => {
+      if (e.target.id === 'profilvorlage') { const v = await waehle('Neues Profil aus Altersvorlage', vorlagen.map((x) => ({ text: `${x.name} – ${x.beschreibung}`, wert: x.id }))); if (!v) return; await api('/api/profile', { methode: 'POST', daten: { vorlage: v } }).then(() => toast('Profil angelegt'), (err) => toast(err.message, 'fehler')); return zeigeProfile(); }
       if (e.target.id === 'profilneu') { const name = prompt('Name des neuen Profils'); if (!name) return; await api('/api/profile', { methode: 'POST', daten: { name } }).catch((err) => toast(err.message, 'fehler')); return zeigeProfile(); }
       const k = e.target.closest('[data-profilid]'); if (!k) return;
       if (e.target.closest('[data-tag]')) { const b = e.target.closest('[data-tag]'); b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); return; }
@@ -771,6 +791,15 @@
         k.querySelector('.profildienste > summary').textContent = `Einzelne Dienste in diesem Profil (${zahl} Ausnahmen, mit „Speichern“ übernehmen)`;
         return;
       }
+      if (e.target.closest('[data-ruheneu]')) { const z = e.target.closest('[data-ruhe]'); z.querySelector('[data-fenster]').insertAdjacentHTML('beforeend', fensterHtml({ tage: [1, 2, 3, 4, 5, 6, 7], von: '21:00', bis: '06:30' })); z.querySelector('small').textContent = 'mit „Speichern“ übernehmen'; return; }
+      if (e.target.closest('[data-limitneu]')) { e.target.closest('[data-ks]').querySelector('[data-limits]').insertAdjacentHTML('beforeend', limitZeile('rubrik:spiele', 60, dl)); return; }
+      if (e.target.closest('[data-limitweg]')) { e.target.closest('[data-limit]').remove(); return; }
+      if (e.target.closest('[data-vorlageanwenden]')) {
+        const v = k.querySelector('[data-vorlage]').value; if (!v) return toast('Bitte zuerst eine Vorlage wählen', 'fehler');
+        if (!confirm(`Vorlage „${vorlagen.find((x) => x.id === v).name}“ auf „${k.querySelector('[data-name]').value}“ anwenden? Kategorien, Dienste, Ruhezeiten, sichere Suche und Zeitlimits werden ersetzt.`)) return;
+        try { await api(`/api/profile/${k.dataset.profilid}/vorlage`, { methode: 'PUT', daten: { vorlage: v } }); toast('Vorlage angewendet'); zeigeProfile(); } catch (err) { toast(err.message, 'fehler'); }
+        return;
+      }
       if (e.target.closest('[data-fensterneu]')) { e.target.closest('[data-kat]').querySelector('[data-fenster]').insertAdjacentHTML('beforeend', fensterHtml({ tage: [1, 2, 3, 4, 5, 6, 7], von: '20:00', bis: '07:00' })); return; }
       if (e.target.closest('[data-profilweg]')) { if (!confirm('Profil löschen? Zugeordnete Geräte bekommen „Standard“.')) return; await api(`/api/profile/${k.dataset.profilid}`, { methode: 'DELETE' }).catch((err) => toast(err.message, 'fehler')); return zeigeProfile(); }
       if (e.target.closest('[data-profilspeichern]')) {
@@ -778,7 +807,11 @@
         $$('[data-kat]', k).forEach((z) => { kategorien[z.dataset.kat] = { an: z.querySelector('[data-katan]').checked, zeitplan: $$('.fenster', z).map((f) => ({ tage: $$('[data-tag][aria-pressed="true"]', f).map((b) => +b.dataset.tag), von: f.querySelector('[data-von]').value, bis: f.querySelector('[data-bis]').value })) }; });
         const dienste = {};
         $$('[data-pdienst]', k).forEach((x) => { if (x.dataset.wert !== 'standard') dienste[x.dataset.pdienst] = x.dataset.wert; });
-        try { await api(`/api/profile/${k.dataset.profilid}`, { methode: 'PUT', daten: { name: k.querySelector('[data-name]').value, farbe: k.querySelector('[data-farbe]').value, kategorien, dienste } }); toast('Profil gespeichert'); zeigeProfile(); } catch (err) { toast(err.message, 'fehler'); }
+        const ks = k.querySelector('[data-ks]'), ruhezeiten = {}, limits = {};
+        $$('[data-ruhe]', ks).forEach((z) => { const f = $$('.fenster', z).map((x) => ({ tage: $$('[data-tag][aria-pressed="true"]', x).map((b) => +b.dataset.tag), von: x.querySelector('[data-von]').value, bis: x.querySelector('[data-bis]').value })); if (f.length) ruhezeiten[z.dataset.ruhe] = f; });
+        $$('[data-limit]', ks).forEach((z) => { limits[z.querySelector('[data-limitziel]').value] = +z.querySelector('[data-limitmin]').value; });
+        const sicherWahl = { suche: ks.querySelector('[data-sicher]').checked, youtube: ks.querySelector('[data-youtube]').value };
+        try { await api(`/api/profile/${k.dataset.profilid}`, { methode: 'PUT', daten: { name: k.querySelector('[data-name]').value, farbe: k.querySelector('[data-farbe]').value, kategorien, dienste, ruhezeiten, limits, sicher: sicherWahl } }); toast('Profil gespeichert'); zeigeProfile(); } catch (err) { toast(err.message, 'fehler'); }
       }
     };
     haupt.onchange = async (e) => {
@@ -798,6 +831,162 @@
       if (ende > woche) { teile.push([s, woche], [0, e2]); } else teile.push([s, ende]);
     }
     return teile.map(([a, b]) => `<i style="left:${a / woche * 100}%;width:${(b - a) / woche * 100}%"></i>`).join('');
+  }
+
+  // ── Kinderschutz ───────────────────────────────────────────────────────────
+  const RUHE_RUBRIKEN = [['messenger', '💬 Messenger'], ['social', '📸 Social Media'], ['spiele', '🎮 Spiele'], ['video', '📺 Fernsehen & Video'], ['ki', '🤖 Suche & KI'], ['shopping', '🛒 Shopping'], ['dating', '💘 Dating']];
+  const limitOptionen = (dl, gewaehlt) => PROFILRUBRIKEN.map((gid) => dl.gruppen.find((g) => g.id === gid)).filter((gr) => gr && !gr.fest).map((gr) => `<optgroup label="${esc(gr.name)}"><option value="rubrik:${esc(gr.id)}" ${gewaehlt === `rubrik:${gr.id}` ? 'selected' : ''}>Alle: ${esc(gr.name)}</option>${dl.dienste.filter((d) => d.gruppe === gr.id).map((d) => `<option value="dienst:${esc(d.id)}" ${gewaehlt === `dienst:${d.id}` ? 'selected' : ''}>${esc(d.symbol)} ${esc(d.name)}</option>`).join('')}</optgroup>`).join('');
+  const limitZeile = (ziel, min, dl) => `<div class="formzeile" data-limit style="margin:6px 0;align-items:center"><select data-limitziel style="flex:1;min-width:0">${limitOptionen(dl, ziel)}</select><input type="number" min="5" max="1440" step="5" value="${esc(min)}" data-limitmin style="width:80px" aria-label="Minuten pro Tag"><small>min/Tag</small><button type="button" class="knopf klein leise" data-limitweg aria-label="Zeitlimit entfernen">✕</button></div>`;
+  const kinderschutzHtml = (p, dl, vorlagen) => `<details class="profildienste" data-ks><summary>🧒 Kinderschutz: sichere Suche, Ruhezeiten, Zeitlimits${p.sicher?.suche || Object.keys(p.ruhezeiten || {}).length || Object.keys(p.limits || {}).length ? ' · aktiv' : ''}</summary>
+    <div class="kategoriezeile"><label class="schalter"><input type="checkbox" data-sicher ${p.sicher?.suche ? 'checked' : ''}><span></span></label><div><b>🔎 Sichere Suche erzwingen</b>${info('Google, Bing und DuckDuckGo liefern auf den Geräten dieses Profils nur noch gefilterte Ergebnisse (SafeSearch) – egal, was in der Suchmaschine eingestellt ist. Das macht FAH-Adblock über DNS, ohne App auf dem Gerät.')}</div></div>
+    <div class="feld" style="margin:8px 0"><label>▶️ YouTube</label><select data-youtube>${[['aus', 'normal'], ['moderat', 'eingeschränkter Modus (moderat)'], ['streng', 'eingeschränkter Modus (streng)']].map(([v, t]) => `<option value="${v}" ${(p.sicher?.youtube || 'aus') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>${info('Der eingeschränkte Modus von YouTube blendet Videos mit Erwachseneninhalten und die Kommentare aus, „streng“ filtert stärker. YouTube selbst bleibt immer erreichbar.')}</div>
+    <div style="margin-top:10px"><b>🌙 Ruhezeiten je Rubrik</b>${info('In diesen Zeiten sind alle Dienste der Rubrik für dieses Profil gesperrt, z. B. Messenger nachts. Ein Fenster über Mitternacht (21:00–06:30) gehört zum Starttag. Hilfsangebote wie Nummer gegen Kummer bleiben immer erreichbar.')}
+      ${RUHE_RUBRIKEN.map(([r, n]) => { const z = p.ruhezeiten?.[r] || []; return `<div class="kategoriezeile" data-ruhe="${r}"><div style="flex:1;min-width:0"><b>${n}</b> <small style="color:var(--muted)">${z.length ? 'Ruhe zu diesen Zeiten:' : 'keine Ruhezeit'}</small><div data-fenster>${z.map(fensterHtml).join('')}</div><button type="button" class="knopf klein leise" data-ruheneu style="margin-top:6px">+ Ruhezeit</button></div></div>`; }).join('')}</div>
+    <div style="margin-top:10px"><b>⏱️ Zeitlimits pro Tag</b>${info('Wie lange ein Dienst oder eine ganze Rubrik am Tag genutzt werden darf. Gezählt wird an den DNS-Anfragen des Geräts – das ist eine Schätzung: Eine App, die im Hintergrund weiterläuft, kann mitzählen. Ist die Zeit um, bleibt der Dienst bis Mitternacht gesperrt; Zusatzzeit gibst du unter <b>Kinderschutz</b>.')}
+      <div data-limits>${Object.entries(p.limits || {}).map(([z, m]) => limitZeile(z, m, dl)).join('')}</div><button type="button" class="knopf klein leise" data-limitneu>+ Zeitlimit</button></div>
+    <div class="feld" style="margin-top:12px"><label>🎓 Altersvorlage anwenden</label><div style="display:flex;gap:8px;flex-wrap:wrap"><select data-vorlage style="flex:1;min-width:0"><option value="">– Vorlage wählen –</option>${vorlagen.map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')}</select><button type="button" class="knopf klein" data-vorlageanwenden>Anwenden</button></div>${info('Überschreibt Kategorien, einzelne Dienste, Ruhezeiten, sichere Suche und Zeitlimits dieses Profils mit der Vorlage. Name, Farbe und zugeordnete Geräte bleiben. Danach kannst du alles anpassen.')}</div>
+  </details>`;
+  const balkenHtml = (z) => { const grenze = z.limit + z.extra, anteil = Math.min(100, Math.round(z.genutzt / Math.max(1, grenze) * 100)); return `<div class="zkbalken" role="img" aria-label="${z.genutzt} von ${grenze} Minuten"><i style="width:${anteil}%;background:${z.aufgebraucht ? 'var(--block)' : anteil > 75 ? '#ffb020' : 'var(--ok, #40e0a0)'}"></i></div>`; };
+  const freigabenHtml = (u) => {
+    const p = u.proxy || {}, f = u.freigabe || {}, fp = f.proxy, port = f.port;
+    const zeile = (ok, titel, text) => `<div class="zeile umbruch"><span class="zsymbol">${ok === true ? '✅' : ok === false ? '⚠️' : '⏳'}</span><div class="haupt"><b>${titel}</b><small>${text}</small></div></div>`;
+    const proxyText = !p.gekoppelt ? 'Noch nicht gekoppelt – einmal unten mit einem FAH-Proxy-Admin anmelden. Danach legt FAH-Adblock die Einträge seiner Geräte selbst an und löscht sie wieder.'
+      : fp?.ok ? `Automatisch · aktive Instanz ${esc(fp.instanz || '')} · ${vor(fp.zeit)} abgeglichen. Haupt und Fail-over: ${esc(p.urls.join(', '))}`
+      : `${esc(fp?.fehler || p.fehler || 'noch nicht abgeglichen')}`;
+    const portText = port?.ok ? (port.ziel ? `TCP 853 → ${esc(port.ziel)} (automatisch)` : 'Keine nötig (kein Gerät eingerichtet)') : esc(port?.fehler || 'noch nicht geprüft');
+    return `<div style="margin-top:4px"><b>Freigaben – automatisch</b>${info('FAH-Adblock pflegt selbst, was von außen erreichbar sein muss: je Gerät einen Eintrag in FAH-Proxy in der Gruppe <b>„AdBlock DNS Domains“</b> (an der gerade aktiven Instanz – FAH-Proxy spiegelt ihn zur anderen) und genau eine Portfreigabe TCP 853 in der UCG. Fällt der FAH-Adblock-Haupt aus, stellt der Ersatz beides auf sich um.')}
+      <div class="zeilen">${zeile(p.gekoppelt ? (fp ? fp.ok : null) : false, 'FAH-Proxy', proxyText)}${zeile(port ? port.ok : null, 'UCG-Portfreigabe', portText)}</div>
+      ${p.gekoppelt ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px"><button class="knopf klein leise" id="ugabgleich">Jetzt abgleichen</button><button class="knopf klein leise" id="ugentkoppeln">FAH-Proxy entkoppeln</button></div>`
+      : `<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px"><div class="feld"><label for="ugpurls">FAH-Proxy-Adressen (Haupt und Fail-over, je Zeile)</label><textarea id="ugpurls" rows="2" placeholder="https://IP-Haupt:28181&#10;https://IP-Failover:28181">${esc((u.proxyVorschlag || []).join('\n'))}</textarea></div>
+        <div class="formzeile"><div class="feld"><label for="ugpname">FAH-Proxy-Admin</label><input id="ugpname" type="text" value="admin" autocomplete="off"></div><div class="feld"><label for="ugppw">Passwort</label><input id="ugppw" type="password" autocomplete="off"></div><div class="feld" style="flex:0 1 110px"><label for="ugpcode">2FA-Code</label><input id="ugpcode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="falls an"></div></div>
+        ${info('Einmalig: FAH-Adblock meldet sich damit bei FAH-Proxy an und legt sich dort ein eigenes Konto „fah-adblock“ mit der Rolle <b>Dienst</b> und Zufallspasswort an. Dieses Konto darf nur die Gruppe „AdBlock DNS Domains“ pflegen – keine anderen Einträge, keine Einstellungen. Dein Admin-Passwort wird nicht gespeichert.')}
+        <div style="display:flex;justify-content:flex-end"><button class="knopf klein gruen" id="ugkoppeln">Koppeln</button></div></div>`}</div>`;
+  };
+  // ── Aufs Handy: Web-Push (App auf dem Home-Bildschirm) und ntfy ──
+  const pushMoeglich = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
+  const istIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const alsApp = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+  const geraetName = () => { const u = navigator.userAgent; return istIos() ? (/iPad/.test(u) || navigator.maxTouchPoints > 1 && !/iPhone/.test(u) ? 'iPad' : 'iPhone') : /Android/.test(u) ? 'Android-Handy' : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows-PC' : 'Browser'; };
+  const schluesselBytes = (t) => { const b = atob(t.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - t.length % 4) % 4)); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
+  async function eigenesAbo() { try { if (!pushMoeglich()) return null; const reg = await navigator.serviceWorker.getRegistration(); return reg ? await reg.pushManager.getSubscription() : null; } catch (e) { return null; } }
+  async function pushEinschalten(schluessel) {
+    // Reihenfolge für iOS: erst die Erlaubnis (direkt aus dem Tipp), dann Service-Worker und Abo
+    const erlaubnis = await Notification.requestPermission();
+    if (erlaubnis !== 'granted') throw new Error('Benachrichtigungen sind für FAH-Adblock nicht erlaubt – in den Einstellungen des Geräts unter Mitteilungen freigeben.');
+    const reg = await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+    let abo = await reg.pushManager.getSubscription();
+    const passt = abo && abo.options?.applicationServerKey && btoa(String.fromCharCode(...new Uint8Array(abo.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === schluessel;
+    if (abo && !passt) { await abo.unsubscribe(); abo = null; }
+    if (!abo) abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: schluesselBytes(schluessel) });
+    const name = (prompt('Name für dieses Gerät (z. B. iPhone Mama):', geraetName()) || geraetName()).trim().slice(0, 60);
+    await api('/api/push/abo', { methode: 'POST', daten: { abo: abo.toJSON(), name } });
+  }
+  function handyHtml(h, ersatz) {
+    if (!h) return '';
+    const n = h.ntfy || {}, abos = h.push?.abos || [];
+    const pushTeil = !pushMoeglich()
+      ? `<div class="hinweiszeile">${!window.isSecureContext ? `Push geht nur über die <b>https-Adresse</b> von FAH-Adblock (z. B. die Adresse in FAH-Proxy), nicht über http://${esc(location.host)}.` : istIos() && !alsApp() ? '<b>iPhone/iPad:</b> diese Seite in Safari öffnen → Teilen <b>⎋</b> → <b>„Zum Home-Bildschirm“</b>. Dann FAH-Adblock vom Home-Bildschirm starten, anmelden und hier Push einschalten (ab iOS 16.4).' : 'Dieser Browser kann keine Push-Benachrichtigungen.'}</div>`
+      : `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="knopf klein gruen" id="pushan" ${ersatz ? 'disabled' : ''}>🔔 Push auf diesem Gerät einschalten</button></div>`;
+    const aboZeilen = abos.map((a) => `<div class="zeile umbruch" data-pushabo="${esc(a.id)}"><span class="zsymbol">${a.fehler ? '⚠️' : '📲'}</span><div class="haupt"><b>${esc(a.name)}</b><small>${esc(a.dienst.includes('apple') ? 'Apple' : a.dienst.includes('google') ? 'Google' : a.dienst.includes('mozilla') ? 'Firefox' : 'Microsoft')} · seit ${esc(new Date(a.seit).toLocaleDateString('de-DE'))}${a.zuletzt ? ` · zuletzt ${vor(a.zuletzt)}` : ''}${a.fehler ? ` · ${esc(a.fehler)}` : ''}</small></div>${ersatz ? '' : '<span style="display:flex;gap:6px;flex:0 0 auto"><button class="knopf klein leise" data-pushtest>Test</button><button class="knopf klein leise" data-pushweg aria-label="Entfernen">✕</button></span>'}</div>`).join('');
+    return `<b>📲 Aufs Handy</b>${info('Zusätzlich zur Liste hier kann jede Meldung aufs Handy kommen – freiwillig, ohne Einrichtung bleibt alles in FAH-Adblock. <b>Push:</b> FAH-Adblock als App auf dem Home-Bildschirm, keine Fremd-App nötig (iPhone ab iOS 16.4, Android, auch am PC). <b>ntfy:</b> alternativ über die ntfy-App. Nach draußen gehen nur Gerät, Art und Anzahl – welche Seiten genau, steht nur hier.')}
+      ${ersatz ? `<div class="hinweiszeile">🔁 Eingerichtet wird am Haupt – diese Ersatz-Instanz bekommt Push-Geräte und ntfy beim Abgleich und sendet nur, solange der Haupt ausgefallen ist.</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">${pushTeil}${aboZeilen ? `<div class="zeilen">${aboZeilen}</div>` : ''}</div>
+      <details style="margin-top:10px"><summary>ntfy (optional)${n.thema ? ' · <span class="chip gruen">an</span>' : ''}</summary><div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        ${info('ntfy ist eine kostenlose App für iPhone und Android (oder ein eigener ntfy-Server). In der App dasselbe Thema abonnieren. Das Thema ist wie ein Passwort: wer es kennt, liest mit – deshalb lang und zufällig. Leeres Thema = ntfy aus.')}
+        <div class="formzeile"><div class="feld"><label for="ntfyurl">ntfy-Adresse</label><input id="ntfyurl" type="url" value="${esc(n.url || 'https://ntfy.sh')}" placeholder="https://ntfy.sh" ${ersatz ? 'disabled' : ''}></div><div class="feld"><label for="ntfythema">Thema</label><div style="display:flex;gap:6px"><input id="ntfythema" type="text" value="${esc(n.thema || '')}" placeholder="leer = aus" style="flex:1;min-width:0" ${ersatz ? 'disabled' : ''}><button type="button" class="knopf klein leise" id="ntfyneu" title="Zufälliges Thema erzeugen" ${ersatz ? 'disabled' : ''}>🎲</button></div></div></div>
+        <div class="feld"><label for="ntfyschl">Zugangsschlüssel (nur bei geschütztem ntfy-Server) ${n.schluesselGesetzt ? '<span class="chip gruen">gesetzt</span>' : ''}</label><input id="ntfyschl" type="password" autocomplete="off" placeholder="${n.schluesselGesetzt ? 'leer lassen = unverändert' : 'tk_… (optional)'}" ${ersatz ? 'disabled' : ''}>${n.schluesselGesetzt && !ersatz ? '<label style="font-size:13px"><input type="checkbox" id="ntfyschlweg"> Schlüssel löschen</label>' : ''}</div>
+        ${n.fehler ? `<div class="fehlertext">${esc(n.fehler)}</div>` : ''}
+        ${ersatz ? '' : '<div style="display:flex;justify-content:flex-end"><button class="knopf klein gruen" id="ntfyspeichern">Speichern</button></div>'}
+      </div></details>
+      ${!ersatz && (abos.length || n.thema) ? '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="knopf klein leise" id="handytest">Testnachricht an alle</button></div>' : ''}`;
+  }
+  async function zeigeKinderschutz() {
+    const [k, g] = await Promise.all([api('/api/kinderschutz'), api('/api/geraete')]);
+    S.geraete = g;
+    const m = k.meldungen, u = k.unterwegs;
+    const nameVon = (id) => g.geraete.find((x) => x.id === id)?.name || id;
+    const ersatz = S.ich?.spiegel?.rolle === 'ersatz';
+    const zkHtml = k.zeitkonten.length ? k.zeitkonten.map((d) => `<div class="zeile umbruch block" data-zkgeraet="${esc(d.id)}"><div class="haupt"><b>${esc(d.name)}</b><small>Profil ${esc(d.profilName)}</small></div><div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">${d.ziele.map((z) => `<div data-zkziel="${esc(z.ziel)}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span>${esc(z.name)}</span><span class="chip ${z.aufgebraucht ? 'rot' : ''}">${z.genutzt} / ${z.limit + z.extra} min${z.extra ? ` (+${z.extra})` : ''}${z.aufgebraucht ? ' · aufgebraucht' : ''}</span></div>${balkenHtml(z)}<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap"><button class="knopf klein leise" data-mehr="15">+15 min</button><button class="knopf klein leise" data-mehr="30">+30 min</button><button class="knopf klein leise" data-mehr="1440">heute frei</button>${z.extra ? '<button class="knopf klein leise" data-mehr="0">Zusatz zurück</button>' : ''}</div></div>`).join('')}</div></div>`).join('') : `<div class="leer">Noch keine Zeitlimits. Lege sie im Profil fest (Profile → Kinderschutz → Zeitlimits pro Tag).</div>`;
+    const verlaufHtml = (m.verlauf || []).slice(0, 15).map((v) => `<div class="zeile umbruch"><span class="zsymbol">${v.ernst ? '⚠️' : 'ℹ️'}</span><div class="haupt"><b>${esc(v.titel)}</b><small>${esc(v.details ? `${v.details} · ` : '')}${esc(v.text)}</small></div><span class="chip ${v.ernst ? 'rot' : ''}" title="${esc(new Date(v.ts).toLocaleString('de-DE'))}${v.handy ? esc(` · aufs Handy: ${v.handy.push ? `Push an ${v.handy.push}` : ''}${v.handy.ntfy ? ' ntfy' : ''}${v.handy.fehler ? ` · Fehler: ${v.handy.fehler.join(', ')}` : ''}`) : ''}">${v.handy ? (v.handy.push || v.handy.ntfy ? '📲 ' : '⚠️ ') : ''}${vor(v.ts)}</span></div>`).join('') || `<div class="leer">${m.an ? 'Noch nichts Auffälliges – gut so.' : 'Meldungen sind aus.'}</div>`;
+    const ugZeile = (d) => {
+      const zert = d.zertifikatBis ? `<span class="chip gruen">bereit · Zertifikat bis ${new Date(d.zertifikatBis).toLocaleDateString('de-DE')}</span>` : d.wartetAufProxy ? '<span class="chip">wartet auf FAH-Proxy</span>' : d.fehler ? '<span class="chip rot">Zertifikat fehlgeschlagen</span>' : '<span class="chip">Zertifikat wird geholt …</span>';
+      const profilLink = `/unterwegs/${encodeURIComponent(d.geheim)}/profil.mobileconfig`;
+      return `<div class="zeile umbruch block" data-uggeraet="${esc(d.id)}"><div class="haupt"><b>${esc(d.name)} ${d.an ? '' : '<span class="chip">aus</span>'} ${zert}</b><small class="mono">${esc(d.host || '– Basisdomain fehlt –')}</small>
+        ${!d.zertifikatBis && d.wartetAufProxy ? `<small>${u.proxy?.gekoppelt ? 'FAH-Proxy-Eintrag ist angelegt – FAH-Proxy holt gerade das Zertifikat (meist 1–2 Minuten; ist das Let’s-Encrypt-Kontingent für die Domain erschöpft, nimmt es ZeroSSL, das kann ein paar Minuten länger dauern). FAH-Adblock sieht jede Minute nach.' : 'Noch nicht erreichbar – oben FAH-Proxy koppeln, dann legt FAH-Adblock den Eintrag selbst an.'}</small>` : d.fehler && !d.zertifikatBis ? `<small style="color:var(--block)">${esc(d.fehler)}</small>` : ''}<small>${d.zuletzt ? `zuletzt ${d.zuletzt.extern ? 'unterwegs' : 'zu Hause'} über ${esc(d.zuletzt.art)} · ${vor(d.zuletzt.ts)}` : 'noch nie unterwegs gefragt'}</small></div>
+        <div class="knopfreihe"><button class="knopf klein leise" data-ugandroid>🤖 Android</button><a class="knopf klein leise" href="${profilLink}" download>🍏 iPhone-Profil</a>
+          <button class="knopf klein leise" data-ugname title="Kurzen Namen wählen, z. B. fairphone">✏️ Name</button><button class="knopf klein leise" data-ugschalten>${d.an ? 'Ausschalten' : 'Einschalten'}</button><button class="knopf klein leise" data-ugneu title="Neues Geheimnis für das iPhone-Profil (z. B. Gerät verloren) – der Name bleibt">Neu ausstellen</button><button class="knopf klein leise" data-ugweg aria-label="Entfernen">✕</button></div></div>`;
+    };
+    const ohneUnterwegs = g.geraete.filter((x) => !u?.geraete.some((d) => d.id === x.id) && !String(x.id).startsWith('ip:'));
+    $('#haupt').innerHTML = `${hinweisband()}
+      <section class="karte"><div class="kartekopf">🧒 Kinderschutz</div><div class="kartekoerper">${info('Hier steht alles, was Eltern im Alltag brauchen: Meldungen über Auffälliges, Zeitkonten mit „mehr Zeit“, der Schutz unterwegs im Mobilfunk, die immer erreichbaren Hilfsangebote und Altersvorlagen für Profile. <b>Ehrlich gesagt:</b> Ein DNS-Filter sieht nur, <i>welche</i> Seiten ein Gerät aufruft, nie den Inhalt von Chats. Mobbing selbst erkennt er nicht – er sperrt die Orte, an denen es meist passiert (anonyme Frage-Apps, Zufallschats), meldet Versuche und hält Hilfe immer offen. Das Gespräch mit dem Kind ersetzt das nicht.')}</div></section>
+      <div class="raster" style="grid-template-columns:repeat(auto-fill,minmax(360px,1fr));margin-top:16px">
+      <section class="karte"><div class="kartekopf">🔔 Meldungen<span class="rechts">${m.an ? `<span class="chip ${m.heute ? 'rot' : 'gruen'}">${zahl(m.heute)} heute</span>` : '<span class="chip">aus</span>'}</span></div>
+        <div class="kartekoerper" style="padding-bottom:0">${info('Hier sammelt FAH-Adblock, was Geräte aus den gewählten Profilen Auffälliges aufrufen – mehrere Versuche innerhalb einer Minute werden zu <b>einem</b> Eintrag, danach hat dieses Gerät für diese Art eine Ruhepause. Die Zahl von heute steht auch als Kachel im Schutzschild. Aufs Handy kommt eine Meldung nur, wenn du das unten einrichtest.')}</div>
+        <div class="zeilen">${verlaufHtml}</div>
+        <div class="kartekoerper" id="handyblock">${handyHtml(k.handy, ersatz)}</div>
+        <div class="kartekoerper"><details><summary>Einstellungen der Meldungen</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
+        <label class="feld" style="flex-direction:row;gap:10px;align-items:center"><span class="schalter"><input type="checkbox" id="mean" ${m.an ? 'checked' : ''}><span></span></span><b>Meldungen sammeln</b></label>
+        <div class="feld"><label>Für diese Profile</label><div class="chipwahl">${k.profile.map((p) => `<label class="chip"><input type="checkbox" data-meprofil="${esc(p.id)}" ${m.profile?.includes(p.id) ? 'checked' : ''}> ${esc(p.name)}</label>`).join('')}</div>${info('Nur Geräte mit diesen Profilen erscheinen hier – dein eigenes Handy also nicht.')}</div>
+        <div class="feld"><label>Melden bei Sperren in</label><div class="chipwahl">${k.kategorien.filter((x) => x.id !== 'werbung').map((x) => `<label class="chip"><input type="checkbox" data-mekat="${esc(x.id)}" ${m.kategorien?.includes(x.id) ? 'checked' : ''}> ${esc(x.symbol)} ${esc(x.name)}</label>`).join('')}</div>${info('Werbung ist bewusst nicht dabei – sie würde ständig melden. Empfohlen: anonyme Chats, Jugendschutz, Drogen und Umgehung.')}</div>
+        <label style="font-size:14px"><input type="checkbox" id="medienste" ${m.dienste ? 'checked' : ''}> auch gesperrte Dienste melden (z. B. TikTok im Profil gesperrt)</label>
+        <label style="font-size:14px"><input type="checkbox" id="mezeit" ${m.zeitlimit !== false ? 'checked' : ''}> melden, wenn ein Zeitlimit aufgebraucht ist</label>
+        <div class="formzeile" style="align-items:center"><label style="font-size:14px;flex:1"><input type="checkbox" id="mestille" ${m.stille !== false ? 'checked' : ''}> Umgehung erkennen: Gerät ist im WLAN, fragt aber seit</label><input id="mestillemin" type="number" min="10" max="720" value="${esc(m.stilleMin || 30)}" style="width:80px"><small>min nicht</small></div>
+        ${info('Ist ein Gerät laut UniFi im Netz, schickt aber lange keine Anfrage mehr an FAH-Adblock, hat es vermutlich ein eigenes DNS, eine VPN-App oder iCloud Privat-Relay eingeschaltet – der Filter wäre dann umgangen. Braucht den UniFi-Zugang (Einstellungen). Höchstens ein Eintrag je Gerät alle 6 Stunden.')}
+        <div class="formzeile" style="align-items:center"><label for="meruhe" style="flex:1;font-size:14px">Ruhepause nach einem Eintrag (je Gerät und Art)</label><input id="meruhe" type="number" min="5" max="1440" value="${esc(m.ruheMin || 60)}" style="width:80px"><small>min</small></div>
+        <div style="display:flex;justify-content:flex-end"><button class="knopf klein gruen" id="mespeichern">Speichern</button></div>
+        </div></details></div></section>
+      <section class="karte"><div class="kartekopf">⏱️ Zeitkonten heute</div><div class="kartekoerper">${info('Verbrauch der Tageslimits je Gerät (geschätzt aus den DNS-Anfragen). <b>+15 min</b> und <b>+30 min</b> geben sofort Zusatzzeit für heute, <b>heute frei</b> hebt das Limit bis Mitternacht auf. Um Mitternacht beginnt alles neu.')}</div><div class="zeilen" id="zkliste">${zkHtml}</div></section>
+      <section class="karte"><div class="kartekopf">📱 Schutz unterwegs<span class="rechts">${u?.an ? (u.dot.laeuft ? `<span class="chip gruen">DoT läuft · Port ${u.dot.port}</span>` : '<span class="chip">an · DoT wartet auf Zertifikat</span>') : '<span class="chip">aus</span>'}</span></div><div class="kartekoerper" style="display:flex;flex-direction:column;gap:12px">
+        ${info('Damit filtert FAH-Adblock ein Handy auch im <b>Mobilfunk</b> – mit dem Profil genau dieses Geräts (Kategorien, Ruhezeiten, Zeitlimits, Meldungen). <b>Android:</b> unter „Privates DNS“ den Namen des Geräts eintragen. <b>iPhone/iPad:</b> das Profil auf dem Gerät laden und installieren. Jedes Gerät bekommt einen eigenen Namen; unter diesem Namen ist von außen nur der DNS-Dienst erreichbar, nie diese Oberfläche.')}
+        ${ersatz ? `<div class="${u?.uebernommen ? 'fehlertext' : 'leer'}" style="text-align:left;padding:0">${u?.uebernommen ? '⚠️ Der Haupt ist nicht erreichbar – diese Ersatz-Instanz hat den Schutz unterwegs übernommen (Portfreigabe und FAH-Proxy zeigen auf sie). Kommt der Haupt zurück, holt er alles wieder zu sich.' : '🔁 Ersatz-Instanz: Zertifikate und FAH-Proxy-Zugang kommen beim Abgleich vom Haupt. Fällt der Haupt länger als 6 Minuten aus, übernimmt diese Instanz automatisch.'}</div>` : ''}
+        <label class="feld" style="flex-direction:row;gap:10px;align-items:center"><span class="schalter"><input type="checkbox" id="ugan" ${u?.an ? 'checked' : ''}><span></span></span><b>Schutz unterwegs</b></label>
+        <div class="formzeile"><div class="feld"><label for="ugbasis">Basisdomain</label><input id="ugbasis" type="text" value="${esc(u?.basis || '')}" placeholder="meinname.example.de"></div><div class="feld"><label for="ugmail">E-Mail für Let's Encrypt (optional)</label><input id="ugmail" type="email" value="${esc(u?.email || '')}" placeholder="name@example.de"></div></div>
+        ${info('Die Basisdomain muss per Platzhalter (*.basisdomain) öffentlich auf deinen Anschluss zeigen (DynDNS). Alles Weitere erledigt FAH-Adblock selbst: Einträge in FAH-Proxy anlegen und löschen, Portfreigabe TCP 853 in der UCG, Zertifikate holen und erneuern.')}
+        <div style="display:flex;justify-content:flex-end"><button class="knopf klein gruen" id="ugspeichern">Speichern</button></div>
+        ${u?.an ? `<div class="formzeile" style="align-items:flex-end"><div class="feld"><label for="ugneu">Gerät hinzufügen</label><select id="ugneu">${ohneUnterwegs.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} · Profil ${esc((g.profile.find((p) => p.id === x.profil) || {}).name || x.profil)}</option>`).join('') || '<option value="">– alle Geräte eingerichtet –</option>'}</select></div><button class="knopf klein" id="ughinzu">Hinzufügen</button><button class="knopf klein leise" id="ugzert">Zertifikate jetzt holen</button></div>` : ''}
+        ${u?.an ? freigabenHtml(u) : ''}
+      </div><div class="zeilen">${(u?.geraete || []).map(ugZeile).join('') || (u?.an ? '<div class="leer">Noch kein Gerät eingerichtet.</div>' : '')}</div></section>
+      <section class="karte"><div class="kartekopf">🆘 Hilfsangebote – immer erreichbar</div><div class="kartekoerper">${info('Diese Beratungs- und Notfallstellen sind auf allen Geräten immer erreichbar – keine Liste, kein Profil, keine Ruhezeit und kein Zeitlimit kann sie sperren. Gut zu wissen für Kinder: Hilfe gibt es anonym und kostenlos.')}<div class="zeilen">${k.hilfe.map((h) => `<div class="zeile umbruch"><span class="zsymbol">${esc(h.symbol)}</span><div class="haupt"><b>${esc(h.name)}</b><small>${esc(h.hinweis)} · ${esc(h.domains.join(', '))}</small></div></div>`).join('')}</div></div></section>
+      <section class="karte"><div class="kartekopf">🎓 Altersvorlagen</div><div class="kartekoerper">${info('Fertige Profile nach Alter, angelehnt an die Empfehlungen von klicksafe und SCHAU HIN!. Ein Klick legt ein neues Profil an; anpassen kannst du danach alles unter Profile. Fernsehen und YouTube werden nie gesperrt, für Jüngere aber gefiltert.')}<div class="zeilen">${k.vorlagen.map((v) => `<div class="zeile umbruch"><span class="zsymbol" style="color:${esc(v.farbe)}">●</span><div class="haupt"><b>${esc(v.name)}</b><small>${esc(v.beschreibung)}</small></div><button class="knopf klein" data-vorlageneu="${esc(v.id)}">Als Profil anlegen</button></div>`).join('')}</div></div></section>
+      </div>`;
+    const haupt = $('#haupt');
+    const sicher = async (fn, ok) => { try { await fn(); if (ok) toast(ok); zeigeKinderschutz(); } catch (err) { toast(err.message, 'fehler'); } };
+    $('#mespeichern').onclick = () => sicher(() => api('/api/kinderschutz/meldungen', { methode: 'PUT', daten: { an: $('#mean').checked,
+      profile: $$('[data-meprofil]').filter((x) => x.checked).map((x) => x.dataset.meprofil), kategorien: $$('[data-mekat]').filter((x) => x.checked).map((x) => x.dataset.mekat), dienste: $('#medienste').checked, zeitlimit: $('#mezeit').checked, stille: $('#mestille').checked, stilleMin: +$('#mestillemin').value, ruheMin: +$('#meruhe').value } }), 'Meldungen gespeichert');
+    if ($('#pushan')) $('#pushan').onclick = () => sicher(async () => { if (!k.handy?.push?.schluessel) throw new Error('Kein Push-Schlüssel – bitte die Seite neu laden'); await pushEinschalten(k.handy.push.schluessel); }, 'Push ist auf diesem Gerät eingeschaltet – gleich mit „Test“ prüfen');
+    eigenesAbo().then(async (abo) => {
+      if (!abo || !$('#pushan') || !crypto.subtle) return;
+      const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(abo.endpoint)))].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16);
+      const a = (k.handy?.push?.abos || []).find((x) => x.kennung === h); if (!a) return;
+      $('#pushan').textContent = '🔔 Push auf diesem Gerät erneuern';
+      const zeile = $(`[data-pushabo="${a.id}"]`); if (zeile) { zeile.dataset.hier = '1'; zeile.querySelector('b').insertAdjacentHTML('beforeend', ' <span class="chip gruen">dieses Gerät</span>'); }
+    });
+    if ($('#ntfyneu')) $('#ntfyneu').onclick = () => { const z = 'abcdefghijkmnopqrstuvwxyz23456789', b = crypto.getRandomValues(new Uint8Array(20)); $('#ntfythema').value = `fah-${[...b].map((x) => z[x % z.length]).join('')}`; toast('Neues Thema – in der ntfy-App genau so abonnieren, dann Speichern'); };
+    if ($('#ntfyspeichern')) $('#ntfyspeichern').onclick = () => sicher(() => api('/api/benachrichtigung/ntfy', { methode: 'PUT', daten: { url: $('#ntfyurl').value.trim(), thema: $('#ntfythema').value.trim(), ...($('#ntfyschl').value ? { schluessel: $('#ntfyschl').value } : {}), ...($('#ntfyschlweg')?.checked ? { schluesselLoeschen: true } : {}) } }), 'ntfy gespeichert');
+    const testErgebnis = (r) => toast(`Testnachricht: ${[r.push ? `Push an ${r.push} ${r.push === 1 ? 'Gerät' : 'Geräte'}` : '', r.ntfy ? 'ntfy' : ''].filter(Boolean).join(' und ') || 'nichts gesendet'}${r.fehler?.length ? ` · ${r.fehler.join(' · ')}` : ''}`, r.fehler?.length ? 'fehler' : undefined);
+    if ($('#handytest')) $('#handytest').onclick = async () => { try { testErgebnis(await api('/api/benachrichtigung/test', { methode: 'POST', daten: {} })); zeigeKinderschutz(); } catch (err) { toast(err.message, 'fehler'); } };
+    $('#ugspeichern').onclick = () => sicher(() => api('/api/unterwegs', { methode: 'PUT', daten: { an: $('#ugan').checked, basis: $('#ugbasis').value.trim(), email: $('#ugmail').value.trim() } }), 'Schutz unterwegs gespeichert');
+    if ($('#ugkoppeln')) $('#ugkoppeln').onclick = () => sicher(() => api('/api/unterwegs/proxy', { methode: 'POST', daten: { urls: $('#ugpurls').value.split(/\s+/).filter(Boolean), name: $('#ugpname').value.trim(), passwort: $('#ugppw').value, code: $('#ugpcode').value.trim() || undefined } }), 'FAH-Proxy gekoppelt – Einträge werden automatisch gepflegt');
+    if ($('#ugabgleich')) $('#ugabgleich').onclick = () => sicher(() => api('/api/unterwegs/freigaben', { methode: 'POST', daten: {} }), 'Abgeglichen');
+    if ($('#ugentkoppeln')) $('#ugentkoppeln').onclick = () => { if (confirm('FAH-Proxy entkoppeln? Vorhandene Einträge bleiben in FAH-Proxy, werden aber nicht mehr gepflegt.')) sicher(() => api('/api/unterwegs/proxy', { methode: 'DELETE' }), 'Entkoppelt'); };
+    if ($('#ughinzu')) $('#ughinzu').onclick = () => { const id = $('#ugneu').value; if (id) sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(id)}`, { methode: 'PUT', daten: { an: true } }), 'Gerät eingerichtet – Freigaben und Zertifikat folgen automatisch'); };
+    if ($('#ugzert')) $('#ugzert').onclick = () => { toast('Zertifikate werden geholt … (bis zu einer Minute)'); sicher(() => api('/api/unterwegs/zertifikate', { methode: 'POST', daten: {} })); };
+    haupt.onclick = async (e) => {
+      const pa = e.target.closest('[data-pushabo]');
+      if (pa && e.target.closest('[data-pushtest]')) { try { testErgebnis(await api('/api/benachrichtigung/test', { methode: 'POST', daten: { id: pa.dataset.pushabo } })); zeigeKinderschutz(); } catch (err) { toast(err.message, 'fehler'); } return; }
+      if (pa && e.target.closest('[data-pushweg]')) { if (confirm('Dieses Gerät bekommt dann keine Push-Benachrichtigungen mehr. Entfernen?')) { const abo = await eigenesAbo(); if (abo && pa.dataset.hier) await abo.unsubscribe().catch(() => {}); sicher(() => api(`/api/push/abo/${encodeURIComponent(pa.dataset.pushabo)}`, { methode: 'DELETE' }), 'Entfernt'); } return; }
+      const mehr = e.target.closest('[data-mehr]');
+      if (mehr) { const gid = mehr.closest('[data-zkgeraet]').dataset.zkgeraet, ziel = mehr.closest('[data-zkziel]').dataset.zkziel; return sicher(() => api('/api/zeitkonto/mehr', { methode: 'POST', daten: { geraet: gid, ziel, minuten: +mehr.dataset.mehr } }), +mehr.dataset.mehr === 1440 ? 'Für heute frei' : +mehr.dataset.mehr ? `+${mehr.dataset.mehr} min für heute` : 'Zusatzzeit zurückgenommen'); }
+      const vn = e.target.closest('[data-vorlageneu]');
+      if (vn) return sicher(() => api('/api/profile', { methode: 'POST', daten: { vorlage: vn.dataset.vorlageneu } }), 'Profil angelegt – Geräte ordnest du unter Profile zu');
+      const zeile = e.target.closest('[data-uggeraet]'); if (!zeile) return;
+      const gid = zeile.dataset.uggeraet, d = u.geraete.find((x) => x.id === gid);
+      if (e.target.closest('[data-ugandroid]')) return hinweisDialog(`🤖 Android: ${d.name}`, `<ol class="dialogschritte"><li>Einstellungen → <b>Netzwerk &amp; Internet</b> → <b>Privates DNS</b></li><li><b>„Hostname des Anbieters für privates DNS“</b> wählen</li><li>Diesen Namen eintragen und speichern:</li></ol><div class="mono dialogname">${esc(d.host)}</div>${info('Zu Hause funktioniert das sofort. Unterwegs braucht es zusätzlich die Portfreigabe TCP 853 auf diese Instanz und ein Zertifikat (Status in der Zeile: „bereit“).')}`, [{ text: '📋 Namen kopieren', art: 'gruen', fn: () => navigator.clipboard?.writeText(d.host).then(() => toast('Name kopiert'), () => toast(d.host)) }]);
+      if (e.target.closest('[data-ugname]')) { const neu = prompt(`Kurzer Name für ${d.name} (wird zu dns-NAME.${u.basis}):`, d.kennung.replace(/^dns-/, '')); if (!neu) return; return sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(gid)}`, { methode: 'PUT', daten: { kennung: neu } }), 'Name geändert'); }
+      if (e.target.closest('[data-ugschalten]')) return sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(gid)}`, { methode: 'PUT', daten: { an: !d.an } }), d.an ? 'Ausgeschaltet' : 'Eingeschaltet');
+      if (e.target.closest('[data-ugneu]')) { if (!confirm(`${d.name}: neues Geheimnis ausstellen? Das alte iPhone-Profil gilt danach nicht mehr – auf dem iPhone/iPad das Profil neu laden. Der Name bleibt.`)) return; return sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(gid)}/erneuern`, { methode: 'POST', daten: {} }), 'Neu ausgestellt'); }
+      if (e.target.closest('[data-ugweg]')) { if (!confirm(`${d.name} aus dem Schutz unterwegs entfernen?`)) return; return sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(gid)}`, { methode: 'DELETE' }), 'Entfernt'); }
+    };
   }
 
   // ── Statistik ──────────────────────────────────────────────────────────────

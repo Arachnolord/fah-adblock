@@ -54,8 +54,8 @@ function sperrAntwort(anfrage, sperrIp = null) {
 
 // Upstream-Antwort an den Client anpassen – byte-genau (roh.js): eigene ID, TTLs herabsetzen,
 // bei UDP ggf. kürzen (TC). Kein Dekodieren/Neubauen, damit unbekannte Typen (HTTPS/SVCB …) heil bleiben.
-function fuerClient(antwortBuf, anfrage, { alterSek = 0, udp = true } = {}) {
-  try { return roh.fuerClient(antwortBuf, { id: anfrage.id, edns: anfrage.edns, alterSek, udp }); } catch (e) { return null; }
+function fuerClient(antwortBuf, anfrage, { alterSek = 0, udp = true, maxTtl = 0 } = {}) {
+  try { return roh.fuerClient(antwortBuf, { id: anfrage.id, edns: anfrage.edns, alterSek, udp, maxTtl }); } catch (e) { return null; }
 }
 
 // Kleinste TTL einer Antwort (für den Zwischenspeicher); negative Antworten: SOA-Minimum

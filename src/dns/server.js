@@ -6,6 +6,8 @@
 // ============================================================================
 // DNS-Server (UDP + TCP) auf genau einer Adresse. Ablauf je Anfrage:
 // Zugang (nur erlaubte Netze) → Bremse je Client → lokale Zone? → Filter → Upstream → CNAME-Prüfung.
+// Unterwegs (DoT/DoH, src/unterwegs.js) kommen Anfragen mit `kontext` {extern, geraet}: das Gerät ist über seine Kennung
+// bekannt, nicht über die IP; Heimnetz-Namen (lokale Records, private Rückwärtszonen) gibt es von draußen nicht.
 'use strict';
 const dgram = require('dgram');
 const net = require('net');
@@ -17,9 +19,9 @@ const GESUNDHEIT = 'health.fah-adblock';
 const KANARIE = new Set(['use-application-dns.net']);   // Firefox: netzweiten Blocker respektieren (kein eigenes DoH)
 
 class DnsServer extends EventEmitter {
-  constructor({ bind, port = 53, erlaubt, filter, upstream, lokal, records, geraete, bremse = { rate: 100, schub: 300 }, sperrseite = () => false, jetzt = () => Date.now() }) {
+  constructor({ bind, port = 53, erlaubt, filter, upstream, lokal, records, geraete, bremse = { rate: 100, schub: 300 }, sperrseite = () => false, jetzt = () => Date.now(), zeitkonto = null }) {
     super();
-    Object.assign(this, { bind, port, erlaubt, filter, upstream, lokal, records, geraete, bremse, sperrseite, jetzt });
+    Object.assign(this, { bind, port, erlaubt, filter, upstream, lokal, records, geraete, bremse, sperrseite, jetzt, zeitkonto });
     this.eimer = new Map();
     this.zaehler = { anfragen: 0, geblockt: 0, abgewiesen: 0, gebremst: 0, fehler: 0, sperrseite: 0 };
     this.udp = null; this.tcp = null; this.gestartet = 0;
@@ -61,7 +63,10 @@ class DnsServer extends EventEmitter {
     });
   }
   bremseErlaubt(ip) {
-    if (ip === this.bind || ip === '127.0.0.1') return true;   // eigene Adresse (Selbsttest, Lastprobe auf dem NAS) nie bremsen
+    if (ip === this.bind || ip === '127.0.0.1') return true;
+    return this.bremseSchluessel(ip);
+  }
+  bremseSchluessel(ip) {   // eigene Adresse (Selbsttest, Lastprobe auf dem NAS) nie bremsen
     const jetzt = this.jetzt(), e = this.eimer.get(ip) || { marken: this.bremse.schub, zeit: jetzt };
     e.marken = Math.min(this.bremse.schub, e.marken + (jetzt - e.zeit) / 1000 * this.bremse.rate); e.zeit = jetzt;
     const ok = e.marken >= 1; if (ok) e.marken -= 1;
@@ -75,18 +80,22 @@ class DnsServer extends EventEmitter {
     return this.bind;
   }
   melde(eintrag) { this.emit('anfrage', eintrag); }
-  async bearbeite(buf, adresse, udp) {
+  async bearbeite(buf, adresse, udp, kontext = null) {
     const start = process.hrtime.bigint(), ip = normIp(adresse), ms = () => Math.round(Number(process.hrtime.bigint() - start) / 1e4) / 100;
     let anfrage;
     try { anfrage = paket.lesen(buf); } catch (e) { return null; }
     if (!anfrage.frage) return paket.antwort(anfrage, { rcode: 'FORMERR' });
     const f = anfrage.frage;
-    if (!this.erlaubt.enthaelt(ip)) { this.zaehler.abgewiesen++; return paket.antwort(anfrage, { rcode: 'REFUSED' }); }
+    const extern = !!kontext?.extern;
+    if (!extern && !this.erlaubt.enthaelt(ip)) { this.zaehler.abgewiesen++; return paket.antwort(anfrage, { rcode: 'REFUSED' }); }
     if (f.name === GESUNDHEIT) return paket.antwort(anfrage, { aa: true, answers: [{ name: f.name, type: 'TXT', class: 'IN', ttl: 0, data: ['ok'] }] });
     this.zaehler.anfragen++;
-    const geraet = this.geraete.von(ip);
-    const basis = { ts: this.jetzt(), ip, geraet: geraet.id, geraetName: geraet.name, domain: f.name, typ: f.typ };
-    if (!this.bremseErlaubt(ip)) {
+    if (extern) this.zaehler.unterwegs = (this.zaehler.unterwegs || 0) + 1;
+    const geraet = kontext?.geraet ? { ...kontext.geraet, ip } : this.geraete.von(ip);
+    // Unterwegs: keine öffentliche IP des Kindes im Protokoll (Datensparsamkeit)
+    const basis = { ts: this.jetzt(), ip: extern ? 'unterwegs' : ip, geraet: geraet.id, geraetName: geraet.name, domain: f.name, typ: f.typ };
+    // Bremse unterwegs je Quell-IP UND je Gerät+IP – ein Fremder mit dem (öffentlich auffindbaren) Gerätenamen leert nicht die Bremse des Kindes
+    if (!(extern ? this.bremseSchluessel(`extip:${ip}`) && this.bremseSchluessel(`ext:${geraet.id}|${ip}`) : this.bremseErlaubt(ip))) {
       this.zaehler.gebremst++;
       if (this.zaehler.gebremst % 50 === 1) this.melde({ ...basis, aktion: 'gebremst', grund: 'zu viele Anfragen', ms: ms() });
       return paket.antwort(anfrage, { rcode: 'REFUSED' });
@@ -94,7 +103,12 @@ class DnsServer extends EventEmitter {
     if (KANARIE.has(f.name)) { this.melde({ ...basis, aktion: 'geblockt', grund: 'DoH-Kanarie', ms: ms() }); return paket.antwort(anfrage, { rcode: 'NXDOMAIN' }); }
     // Lokale Records (Split-Horizon): bestimmte Namen direkt auf eine interne IP – vor der Gateway-Zone und dem Upstream, nie gefiltert.
     // Andere Typen oder fehlender passender Eintrag (z. B. AAAA, nur A hinterlegt) → NOERROR ohne Antwort, damit der Name NICHT ins Internet geht.
-    if (this.records && !this.records.leer) {
+    // Von draußen: private Namen und Rückwärtszonen gibt es nicht, alles andere (auch die eigene Domain) geht ins Internet
+    if (extern && this.lokal.zustaendig(f.name) && /(^|\.)(arpa|lan|local|localdomain|internal|home)$/.test(f.name)) {
+      this.melde({ ...basis, aktion: 'lokal', grund: 'Heimnetz-Name (unterwegs)', ms: ms() });
+      return paket.antwort(anfrage, { rcode: 'NXDOMAIN' });
+    }
+    if (!extern && this.records && !this.records.leer) {
       const rec = this.records.treffer(f.name);
       if (rec) {
         const answers = f.typ === 'A' && rec.a ? [{ name: f.name, type: 'A', class: 'IN', ttl: this.records.ttl, data: rec.a }]
@@ -105,7 +119,7 @@ class DnsServer extends EventEmitter {
       }
     }
     // Heimnetz-Namen und Rückwärtsauflösung privater Netze: Gateway fragen, Antwort unverändert
-    if (this.lokal.zustaendig(f.name)) {
+    if (!extern && this.lokal.zustaendig(f.name)) {
       try {
         const antwort = await this.lokal.frage(buf);
         this.melde({ ...basis, aktion: 'lokal', grund: 'Gateway', ms: ms() });
@@ -119,17 +133,20 @@ class DnsServer extends EventEmitter {
     if (e.aktion === 'geblockt') {
       this.zaehler.geblockt++;
       this.melde({ ...basis, aktion: 'geblockt', grund: e.grund, listen: e.listen, regel: e.regel, dienst: e.dienstName, kategorie: e.kategorie, profil: e.profil, ms: ms() });
-      return paket.sperrAntwort(anfrage, this.sperrIp(e));
+      return paket.sperrAntwort(anfrage, extern ? null : this.sperrIp(e));
     }
+    // Sichere Suche: Google/Bing/DuckDuckGo/YouTube auf die gefilterte Fassung des Anbieters umlenken (CNAME + deren Adressen)
+    const sicher = e.grund === 'Pause' ? null : this.filter.sicherZiel(geraet.id, f.name);
+    if (sicher) return this.sichereSuche(anfrage, f, sicher, { ...basis, profil: e.profil }, ms);
     let r;
     // Was der Betreiber ausdrücklich freigibt, darf auch ein filternder DoH-Anbieter nicht sperren
-    const ungefiltert = e.grund === 'Geschützter Dienst' || e.grund === 'Freigabe';
+    const ungefiltert = e.grund === 'Geschützter Dienst' || e.grund === 'Freigabe' || e.grund === 'Hilfsangebot';
     try { r = await this.upstream.frage(anfrage, paket.upstreamAnfrage(anfrage), { ungefiltert }); } catch (err) {
       this.zaehler.fehler++; this.melde({ ...basis, aktion: 'fehler', grund: err.message, profil: e.profil, ms: ms() });
       return paket.antwort(anfrage, { rcode: 'SERVFAIL' });
     }
     // CNAME-Tarnung: harmlose Domain zeigt auf einen gelisteten Tracker (nicht bei Pause/Freigabe – auch nicht, wenn die Domain nur auf einer Freigabeliste steht)
-    if (!['Pause', 'Freigabe', 'Freigabeliste', 'auf Freigabeliste', 'Geschützter Dienst'].includes(e.grund)) {
+    if (!['Pause', 'Freigabe', 'Freigabeliste', 'auf Freigabeliste', 'Geschützter Dienst', 'Hilfsangebot'].includes(e.grund)) {
       // Eine Dienst-Sperre gilt dem Dienst, nicht fremden Diensten auf derselben Infrastruktur: ecs.office.com (Microsoft 365) läuft per CNAME
       // über mira.config.skype.com und svc.ha-teams.office.com (Teams). Wäre der eigene Dienst gesperrt, hätte schon der Filter oben geblockt.
       const eigenerDienst = this.filter.dienstVon(f.name);
@@ -139,14 +156,45 @@ class DnsServer extends EventEmitter {
         if (z.aktion === 'geblockt') {
           this.zaehler.geblockt++;
           this.melde({ ...basis, aktion: 'geblockt', grund: 'CNAME-Tarnung', cname: ziel, listen: z.listen, regel: z.regel, kategorie: z.kategorie, profil: e.profil, ms: ms() });
-          return paket.sperrAntwort(anfrage, this.sperrIp(z));
+          return paket.sperrAntwort(anfrage, extern ? null : this.sperrIp(z));
         }
       }
     }
-    const antwort = paket.fuerClient(r.buf, anfrage, { alterSek: r.alterSek, udp });
+    // Zeitlimit: Nutzung vermerken; Antworten kurz halten (60 s), damit eine Sperre nach Ablauf schnell greift
+    let maxTtl = 0;
+    if (this.zeitkonto && e.grund !== 'Pause') {
+      const profil = this.filter.profilVon(geraet.id), dienst = profil.limits ? this.filter.dienstVon(f.name) : null;
+      const ziele = dienst ? this.filter.limitZiele(profil, dienst) : [];
+      if (ziele.length) { this.zeitkonto.vermerke(geraet.id, ziele, basis.ts); maxTtl = 60; }
+    }
+    // Unterwegs ohne Alterung der TTL: sonst verriete eine sinkende TTL, welche Namen zu Hause gerade aufgerufen wurden
+    const antwort = paket.fuerClient(r.buf, anfrage, { alterSek: extern ? 0 : r.alterSek, udp, maxTtl: extern ? (maxTtl || 300) : maxTtl });
     if (!antwort) { this.zaehler.fehler++; return paket.antwort(anfrage, { rcode: 'SERVFAIL' }); }
-    this.melde({ ...basis, aktion: 'erlaubt', grund: ['Pause', 'Freigabe', 'Freigabeliste', 'Geschützter Dienst'].includes(e.grund) ? e.grund : '', regel: e.regel, dienst: e.dienstName, listen: e.grund === 'Freigabeliste' ? e.listen : undefined, profil: e.profil, cache: r.cache, anbieter: r.anbieter, rcode: paket.rcodeVon(r.buf), ms: ms() });
+    // Hilfsangebote vertraulich: keine Zeile im Protokoll, im Livestrom, in Statistik oder Rettung
+    if (e.grund === 'Hilfsangebot') return antwort;
+    this.melde({ ...basis, aktion: 'erlaubt', grund: ['Pause', 'Freigabe', 'Freigabeliste', 'Geschützter Dienst', 'Hilfsangebot'].includes(e.grund) ? e.grund : '', regel: e.regel, dienst: e.dienstName, listen: e.grund === 'Freigabeliste' ? e.listen : undefined, profil: e.profil, cache: r.cache, anbieter: r.anbieter, rcode: paket.rcodeVon(r.buf), ms: ms() });
     return antwort;
+  }
+  // Umlenkung auf die sichere Fassung: Adressen des Ziels beim Upstream holen und unter dem gefragten Namen als CNAME-Kette ausliefern.
+  // HTTPS/SVCB und andere Typen bekommen eine leere Antwort – sonst brächten sie Adressen/ECH der ungefilterten Fassung mit.
+  async sichereSuche(anfrage, f, ziel, basis, ms) {
+    const typ = f.typ === 'A' || f.typ === 'AAAA' ? f.typ : null;
+    let answers = [];
+    if (typ) {
+      try {
+        const q = paket.lesen(paket.dnsPacket.encode({ type: 'query', id: 0, flags: paket.dnsPacket.RECURSION_DESIRED, questions: [{ type: typ, name: ziel, class: 'IN' }] }));
+        const r = await this.upstream.frage(q, paket.upstreamAnfrage(q), { ungefiltert: true });
+        const p = paket.dnsPacket.decode(r.buf);
+        const adressen = (p.answers || []).filter((x) => x.type === typ);
+        if (!adressen.length) throw new Error(`keine ${typ}-Adresse für ${ziel}`);
+        answers = [{ name: f.name, type: 'CNAME', class: 'IN', ttl: 300, data: ziel }, ...adressen.map((x) => ({ name: ziel, type: typ, class: 'IN', ttl: Math.min(300, x.ttl || 300), data: x.data }))];
+      } catch (err) {
+        this.zaehler.fehler++; this.melde({ ...basis, aktion: 'fehler', grund: `Sichere Suche: ${err.message}`, ms: ms() });
+        return paket.antwort(anfrage, { rcode: 'SERVFAIL' });
+      }
+    }
+    this.melde({ ...basis, aktion: 'erlaubt', grund: 'Sichere Suche', anbieter: ziel, ms: ms() });
+    return paket.antwort(anfrage, { answers });
   }
   status() { return { bind: this.bind, port: this.port, laeuft: !!this.gestartet, seit: this.gestartet, zaehler: this.zaehler, erlaubteNetze: this.erlaubt.texte, schleifeMs: this.schleife?.() || null }; }
 }

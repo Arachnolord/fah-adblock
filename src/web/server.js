@@ -18,6 +18,9 @@ const { COOKIE, LAUFZEIT } = require('../auth');
 const { musterLesen } = require('../dns/filter');
 const { netz, netzliste, normIp, normDomain } = require('../netz');
 const { lookup } = require('../aufloeser');
+const kinderschutz = require('../daten/kinderschutz');
+const { limitZielOk } = require('../einstellungen');
+const { neueKennung, kennungAus, KENNUNG, neuesGeheimnis } = require('../unterwegs');
 
 const TYPEN = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
 const SICHERHEIT = {
@@ -30,7 +33,7 @@ const pruefe = (bed, text, status = 400) => { if (!bed) throw new HttpFehler(sta
 const id = () => crypto.randomBytes(6).toString('hex');
 
 function webServer(k) {
-  const { auth, einst, listen, filter, upstream, dns, geraete, protokoll, live, version, statisch, daten = null, spiegel = null, sperrCa = '' } = k;
+  const { auth, einst, listen, filter, upstream, dns, geraete, protokoll, live, version, statisch, daten = null, spiegel = null, sperrCa = '', zeitkonto = null, meldungen = null, unterwegs = null, acme = null, benachrichtigung = null } = k;
   let sperrAufrufe = 0;
   const routen = [];
   const route = (methode, muster, fn, { offen = false } = {}) => {
@@ -88,6 +91,11 @@ function webServer(k) {
       listen: { gesamt: ls.gesamt, an: ls.quellen.filter((q) => q.an).length, fehler: ls.quellen.filter((q) => q.an && q.fehler).length, laedt: ls.quellen.some((q) => q.laedt) },
       protokoll: { groesse: protokoll.groesse(), fehler: protokoll.fehler, tage: w().protokoll.tage },
       sperrseite: { an: !!w().sperrseite?.an, aufrufe: sperrAufrufe, zertifikat: !!(sperrCa && fs.existsSync(sperrCa)) },
+      kinderschutz: {
+        meldungen: { an: !!w().meldungen?.an, heute: meldungen ? meldungen.heute() : 0, letzte: meldungen?.verlauf[0] ? { ts: meldungen.verlauf[0].ts, titel: meldungen.verlauf[0].titel } : null },
+        zeitkonten: zeitkontoStatus().reduce((a, g) => ({ geraete: a.geraete + 1, aufgebraucht: a.aufgebraucht + g.ziele.filter((z) => z.aufgebraucht).length }), { geraete: 0, aufgebraucht: 0 }),
+        unterwegs: unterwegs ? { an: !!w().unterwegs?.an, geraete: Object.values(w().unterwegs?.geraete || {}).filter((g) => g.an !== false).length, aktiv: [...unterwegs.zuletzt.values()].filter((z) => z.extern && jetzt - z.ts < 3600000).length, dot: !!unterwegs.server?.listening } : null,
+      },
     };
   });
   route('GET', '/api/verlauf', ({ q }) => protokoll.verlauf(q.get('zeitraum') === '7d' ? '7d' : '24h'));
@@ -159,6 +167,116 @@ function webServer(k) {
     return { domain, geraet, ...filter.entscheide({ geraetId: geraet, name: domain }), listen: listen.treffer(domain) };
   });
 
+  // ── Kinderschutz: Meldungen, Zeitkonten, Altersvorlagen, Hilfsangebote ───
+  const dk = require('../dienste');
+  const zielName = (ziel) => { const [art, zid] = String(ziel).split(':'); return art === 'dienst' ? dk.DIENSTE.find((d) => d.id === zid)?.name || zid : `${dk.GRUPPEN.find((g) => g.id === zid)?.name || zid} (alle)`; };
+  function zeitkontoStatus() {
+    if (!zeitkonto) return [];
+    const ids = new Set([...Object.keys(w().geraete || {}), ...Object.keys(zeitkonto.heute().geraete)]);
+    const aus = [];
+    for (const gid of ids) {
+      const p = filter.profilVon(gid), limits = p.limits || {};
+      if (!Object.keys(limits).length) continue;
+      aus.push({ id: gid, name: w().geraete[gid]?.name || geraete.nameVon(gid) || gid, profil: p.id, profilName: p.name,
+        ziele: Object.entries(limits).map(([ziel, limit]) => { const genutzt = zeitkonto.genutztMin(gid, ziel), extra = zeitkonto.extraMin(gid, ziel); return { ziel, name: zielName(ziel), limit, extra, genutzt, aufgebraucht: !!zeitkonto.aufgebraucht(gid, p, [ziel]) }; }) });
+    }
+    return aus.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  }
+  route('GET', '/api/vorlagen', () => kinderschutz.VORLAGEN);
+  route('GET', '/api/kinderschutz', () => ({
+    meldungen: { ...einst.oeffentlich().meldungen, ...(meldungen ? meldungen.status() : {}) },
+    handy: benachrichtigung ? benachrichtigung.status() : null,
+    zeitkonten: zeitkontoStatus(),
+    unterwegs: unterwegs ? { ...unterwegs.status(), proxyVorschlag: (() => { const sp = spiegel ? spiegel.status() : {}; return [sp.eigene_url, sp.partner_url].filter(Boolean).map((u) => { try { return new URL(u).hostname; } catch (e) { return ''; } }).filter((h) => /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(h)).map((h) => `https://${h}:28181`); })() } : null,
+    hilfe: dk.DIENSTE.filter((d) => d.fest).map((d) => ({ id: d.id, name: d.name, symbol: d.symbol, domains: d.domains, hinweis: d.hinweis || '' })),
+    vorlagen: kinderschutz.VORLAGEN, profile: w().profile.map((p) => ({ id: p.id, name: p.name, farbe: p.farbe })),
+    kategorien: w().kategorien.filter((x) => x.art !== 'erlauben'),
+  }));
+  route('PUT', '/api/kinderschutz/meldungen', ({ body }) => {
+    const m = {};
+    if (body.an !== undefined) m.an = !!body.an;
+    if (body.profile !== undefined) { pruefe(Array.isArray(body.profile) && body.profile.every((x) => w().profile.some((p) => p.id === x)), 'Profil unbekannt'); m.profile = body.profile; }
+    if (body.kategorien !== undefined) { pruefe(Array.isArray(body.kategorien) && body.kategorien.every((x) => w().kategorien.some((c) => c.id === x)), 'Kategorie unbekannt'); m.kategorien = body.kategorien; }
+    for (const s2 of ['dienste', 'zeitlimit', 'stille']) if (body[s2] !== undefined) m[s2] = !!body[s2];
+    if (body.stilleMin !== undefined) m.stilleMin = Math.max(10, Math.min(720, Math.round(+body.stilleMin) || 30));
+    if (body.ruheMin !== undefined) m.ruheMin = Math.max(5, Math.min(1440, Math.round(+body.ruheMin) || 60));
+    einst.aendern((x) => { x.meldungen = { ...x.meldungen, ...m }; });
+    return einst.oeffentlich().meldungen;
+  });
+  // Benachrichtigungen aufs Handy (Web-Push, ntfy) – eingerichtet wird am Haupt, der Ersatz bekommt alles beim Abgleich
+  const handyBereit = () => { pruefe(benachrichtigung, 'Benachrichtigungen nicht verfügbar', 503); pruefe(!benachrichtigung.istErsatz(), 'Bitte am Haupt einrichten – der Ersatz übernimmt alles beim Abgleich', 409); };
+  const fehler400 = (fn) => { try { return fn(); } catch (e) { throw e instanceof HttpFehler ? e : new HttpFehler(400, e.message); } };
+  route('GET', '/api/benachrichtigung', () => { pruefe(benachrichtigung, 'Benachrichtigungen nicht verfügbar', 503); return benachrichtigung.status(); });
+  route('PUT', '/api/benachrichtigung/ntfy', ({ body }) => { handyBereit(); fehler400(() => benachrichtigung.ntfySetzen({ url: body.url, thema: body.thema, schluessel: typeof body.schluessel === 'string' ? body.schluessel : undefined, schluesselLoeschen: !!body.schluesselLoeschen })); return benachrichtigung.status(); });
+  route('POST', '/api/benachrichtigung/test', async ({ body }) => {
+    pruefe(benachrichtigung, 'Benachrichtigungen nicht verfügbar', 503);
+    let erg; try { erg = await benachrichtigung.test(typeof body.id === 'string' ? body.id : null); } catch (e) { throw new HttpFehler(400, e.message); }
+    if (!erg.push && !erg.ntfy && erg.fehler.length) throw new HttpFehler(502, erg.fehler.join(' · '));
+    return erg;
+  });
+  route('POST', '/api/push/abo', ({ body }) => {
+    handyBereit();
+    const id = fehler400(() => benachrichtigung.aboHinzufuegen({ abo: body.abo, name: body.name }));
+    return { id, ...benachrichtigung.status() };
+  });
+  route('DELETE', '/api/push/abo/:id', ({ p }) => { handyBereit(); pruefe(/^[a-f0-9]{16}$/.test(p.id), 'Unbekanntes Gerät'); benachrichtigung.aboEntfernen(p.id); return benachrichtigung.status(); });
+  route('POST', '/api/zeitkonto/mehr', ({ body }) => {
+    pruefe(zeitkonto, 'Zeitkonto nicht verfügbar', 503);
+    const gid = String(body.geraet || ''); pruefe(gid && gid.length <= 64, 'Gerät fehlt');
+    pruefe(limitZielOk(body.ziel), 'Ziel unbekannt');
+    const min = Math.round(+body.minuten); pruefe([0, 15, 30, 60, 1440].includes(min), 'Minuten: 15, 30, 60, 1440 (Rest des Tages) oder 0');
+    zeitkonto.mehr(gid, body.ziel, min); zeitkonto.speichern();
+    return { ok: true, extra: zeitkonto.extraMin(gid, body.ziel) };
+  });
+  // ── Schutz unterwegs ──
+  const unterwegsWeiter = (sofort = false) => { if (unterwegs) { unterwegs.dotPruefen(); unterwegs.zertifikatePflegen({ sofort }).catch(() => {}); } };
+  route('PUT', '/api/unterwegs', ({ body }) => {
+    const u = {};
+    if (body.an !== undefined) u.an = !!body.an;
+    if (body.basis !== undefined) { const b = String(body.basis || '').trim().toLowerCase().replace(/^\*?\./, ''); pruefe(!b || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(b), 'Basisdomain wie meinname.example.de angeben'); u.basis = b; }
+    if (body.email !== undefined) { const m = String(body.email || '').trim(); pruefe(!m || /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(m), 'E-Mail-Adresse ungültig'); u.email = m; }
+    einst.aendern((x) => { x.unterwegs = { ...x.unterwegs, ...u }; });
+    unterwegsWeiter();
+    return unterwegs ? unterwegs.status() : w().unterwegs;
+  });
+  // Name für unterwegs: frei wählbar (dns-…), sonst aus dem Gerätenamen, notfalls zufällig; immer eindeutig
+  const freieKennung = (x, wunsch, gid) => {
+    const belegt = (k) => Object.entries(x.unterwegs.geraete).some(([id, y]) => id !== gid && y.kennung === k);
+    if (wunsch && KENNUNG.test(wunsch) && !belegt(wunsch)) return wunsch;
+    for (let i = 2; wunsch && KENNUNG.test(wunsch) && i < 50; i++) { const k = `${wunsch.slice(0, 21)}-${i}`; if (KENNUNG.test(k) && !belegt(k)) return k; }
+    let k; do { k = neueKennung(); } while (belegt(k));
+    return k;
+  };
+  route('PUT', '/api/unterwegs/geraete/:id', ({ p, body }) => {
+    const gid = decodeURIComponent(p.id); pruefe(gid.length <= 64, 'Ungültige Geräte-ID');
+    let wunsch = null;
+    if (body.kennung !== undefined) { wunsch = `dns-${String(body.kennung || '').trim().toLowerCase().replace(/^dns-/, '').replace(/\..*$/, '')}`; pruefe(KENNUNG.test(wunsch), 'Name: Kleinbuchstaben, Ziffern und Bindestrich, 1–24 Zeichen (z. B. fairphone)'); pruefe(!Object.entries(w().unterwegs.geraete).some(([id, y]) => id !== gid && y.kennung === wunsch), 'Diesen Namen hat schon ein anderes Gerät'); }
+    einst.aendern((x) => {
+      const g = x.unterwegs.geraete[gid];
+      if (!g) x.unterwegs.geraete[gid] = { kennung: freieKennung(x, wunsch || kennungAus(x.geraete[gid]?.name || geraete.nameVon(gid)), gid), geheim: neuesGeheimnis(), an: body.an !== false };
+      else { if (body.an !== undefined) g.an = !!body.an; if (wunsch) g.kennung = wunsch; }
+    });
+    unterwegsWeiter(true);
+    return unterwegs ? unterwegs.status() : w().unterwegs;
+  });
+  route('POST', '/api/unterwegs/geraete/:id/erneuern', ({ p }) => {
+    const gid = decodeURIComponent(p.id); pruefe(w().unterwegs.geraete[gid], 'Gerät ist nicht für unterwegs eingerichtet', 404);
+    einst.aendern((x) => { x.unterwegs.geraete[gid] = { ...x.unterwegs.geraete[gid], kennung: freieKennung(x, kennungAus(x.geraete[gid]?.name || geraete.nameVon(gid)), gid), geheim: neuesGeheimnis() }; });   // kurzer Name bleibt, das Geheimnis (iPhone-Profil) ist neu
+    unterwegsWeiter(true);
+    return unterwegs ? unterwegs.status() : w().unterwegs;
+  });
+  route('DELETE', '/api/unterwegs/geraete/:id', ({ p }) => { const gid = decodeURIComponent(p.id); einst.aendern((x) => { delete x.unterwegs.geraete[gid]; }); unterwegsWeiter(); return { ok: true }; });
+  // FAH-Proxy einmal koppeln (Admin-Login wird nicht gespeichert) – danach legt FAH-Adblock die Einträge selbst an und löscht sie
+  route('POST', '/api/unterwegs/proxy', async ({ body }) => {
+    pruefe(unterwegs?.proxy, 'Nicht verfügbar', 503);
+    try { await unterwegs.proxy.koppeln({ urls: body.urls, name: body.name, passwort: body.passwort, code: body.code }); } catch (e) { throw new HttpFehler(e.status || 502, e.message); }
+    await unterwegs.freigabenPflegen().catch(() => {}); unterwegsWeiter(true);
+    return unterwegs.status();
+  });
+  route('DELETE', '/api/unterwegs/proxy', async () => { pruefe(unterwegs?.proxy, 'Nicht verfügbar', 503); const r = await unterwegs.proxy.entkoppeln(); return { ...unterwegs.status(), entkoppelt: r }; });
+  route('POST', '/api/unterwegs/freigaben', async () => { pruefe(unterwegs, 'Nicht verfügbar', 503); await unterwegs.freigabenPflegen(); return unterwegs.status(); });
+  route('POST', '/api/unterwegs/zertifikate', async () => { pruefe(unterwegs, 'Nicht verfügbar', 503); await unterwegs.zertifikatePflegen({ sofort: true }); return unterwegs.status(); });
+
   // ── Katalog kostenloser DNS-Anbieter ─────────────────────────────────────
   const anbieterKatalog = require('../anbieter');
   route('GET', '/api/anbieter', () => ({ gruppen: anbieterKatalog.GRUPPEN, anbieter: anbieterKatalog.ANBIETER }));
@@ -168,6 +286,7 @@ function webServer(k) {
   route('GET', '/api/dienste', () => ({ gruppen: dienstKatalog.GRUPPEN, dienste: dienstKatalog.DIENSTE.map((d) => ({ ...d, ...dienstKatalog.modusVon(d, w().dienste || {}) })) }));
   route('PUT', '/api/dienste/:id', ({ p, body }) => {
     const d = dienstKatalog.DIENSTE.find((x) => x.id === p.id); pruefe(d, 'Dienst unbekannt');
+    pruefe(!d.fest, 'Hilfsangebote sind immer erreichbar und lassen sich nicht ändern');
     const modus = String(body.modus || (body.gesperrt ? 'sperren' : d.vorgabe));
     pruefe(['frei', 'listen', 'sperren'].includes(modus), 'Unbekannter Zustand');
     const geltung = String(body.geltung || 'alle');
@@ -218,14 +337,43 @@ function webServer(k) {
 
   // ── Profile ───────────────────────────────────────────────────────────────
   route('GET', '/api/profile', () => ({ profile: w().profile, kategorien: w().kategorien }));
+  const vorlageWerte = (vid) => {
+    const v = kinderschutz.VORLAGEN.find((x) => x.id === vid); pruefe(v, 'Vorlage unbekannt');
+    const kopie = JSON.parse(JSON.stringify(v));
+    return { kategorien: kopie.kategorien, dienste: kopie.dienste, ruhezeiten: kopie.ruhezeiten, sicher: kopie.sicher, limits: kopie.limits, beschreibung: kopie.beschreibung, farbe: kopie.farbe, name: kopie.name };
+  };
   route('POST', '/api/profile', ({ body }) => {
-    const name = String(body.name || '').trim().slice(0, 40); pruefe(name, 'Name fehlt');
-    const profil = { id: `p-${id()}`, name, farbe: /^#[0-9a-f]{6}$/i.test(body.farbe) ? body.farbe : '#7aa2ff', beschreibung: '', kategorien: { werbung: { an: true, zeitplan: [] }, schadsoftware: { an: true, zeitplan: [] } } };
+    const vorlage = body.vorlage ? vorlageWerte(String(body.vorlage)) : null;
+    const name = String(body.name || vorlage?.name || '').trim().slice(0, 40); pruefe(name, 'Name fehlt');
+    const profil = { id: `p-${id()}`, name, farbe: /^#[0-9a-f]{6}$/i.test(body.farbe) ? body.farbe : vorlage?.farbe || '#7aa2ff', beschreibung: vorlage?.beschreibung || '', kategorien: { werbung: { an: true, zeitplan: [] }, schadsoftware: { an: true, zeitplan: [] } } };
+    if (vorlage) Object.assign(profil, { kategorien: vorlage.kategorien, dienste: vorlage.dienste, ruhezeiten: vorlage.ruhezeiten, sicher: vorlage.sicher, limits: vorlage.limits });
     einst.aendern((x) => { x.profile.push(profil); });
     return profil;
   });
+  route('PUT', '/api/profile/:id/vorlage', ({ p, body }) => {
+    pruefe(w().profile.some((x) => x.id === p.id), 'Profil unbekannt', 404);
+    const v = vorlageWerte(String(body.vorlage || ''));
+    einst.aendern((x) => { const pr = x.profile.find((y) => y.id === p.id); Object.assign(pr, { kategorien: v.kategorien, dienste: v.dienste, ruhezeiten: v.ruhezeiten, sicher: v.sicher, limits: v.limits, beschreibung: v.beschreibung }); });
+    return { ok: true };
+  });
+  const zeitplanLesen = (liste) => {
+    const zeitplan = (Array.isArray(liste) ? liste : []).slice(0, 14).map((f) => ({ tage: (f.tage || []).map(Number).filter((t) => t >= 1 && t <= 7), von: String(f.von), bis: String(f.bis) }));
+    for (const f of zeitplan) pruefe(/^\d{1,2}:\d{2}$/.test(f.von) && /^\d{1,2}:\d{2}$/.test(f.bis) && f.tage.length, 'Zeitplan: Tage und Uhrzeiten (HH:MM) angeben');
+    return zeitplan;
+  };
   route('PUT', '/api/profile/:id', ({ p, body }) => {
     pruefe(w().profile.some((x) => x.id === p.id), 'Profil unbekannt', 404);
+    // Kinderschutz: Ruhezeiten je Rubrik, sichere Suche, Tageslimits
+    let ruhezeiten = null, sicher = null, limits = null;
+    if (body.ruhezeiten && typeof body.ruhezeiten === 'object') {
+      ruhezeiten = {};
+      for (const [r, z] of Object.entries(body.ruhezeiten)) { pruefe(kinderschutz.RUHE_RUBRIKEN.includes(r), `Rubrik ohne Ruhezeit: ${r}`); const zp = zeitplanLesen(z); if (zp.length) ruhezeiten[r] = zp; }
+    }
+    if (body.sicher && typeof body.sicher === 'object') { pruefe(['aus', 'moderat', 'streng'].includes(body.sicher.youtube || 'aus'), 'YouTube: aus, moderat oder streng'); sicher = { suche: !!body.sicher.suche, youtube: body.sicher.youtube || 'aus' }; }
+    if (body.limits && typeof body.limits === 'object') {
+      limits = {};
+      for (const [ziel, m] of Object.entries(body.limits)) { pruefe(limitZielOk(ziel), `Zeitlimit: Ziel unbekannt (${ziel})`); const n = Math.round(+m); pruefe(n >= 5 && n <= 1440, 'Zeitlimit: 5 bis 1440 Minuten'); limits[ziel] = n; }
+    }
     const kategorien = {};
     for (const [kid, kw] of Object.entries(body.kategorien || {})) {
       const kat = w().kategorien.find((c) => c.id === kid);
@@ -241,10 +389,11 @@ function webServer(k) {
       profilDienste = {};
       for (const [did, wert] of Object.entries(body.dienste)) {
         const d = dienstKatalog.DIENSTE.find((x) => x.id === did); pruefe(d, `Dienst unbekannt: ${did}`);
+        if (d.fest) continue;   // Hilfsangebote sind nie sperrbar
         if (wert === 'frei' || wert === 'sperren' || wert === 'listen') profilDienste[did] = wert;
       }
     }
-    einst.aendern((x) => { const pr = x.profile.find((y) => y.id === p.id); if (body.name) pr.name = String(body.name).slice(0, 40); if (/^#[0-9a-f]{6}$/i.test(body.farbe || '')) pr.farbe = body.farbe; if (body.kategorien) pr.kategorien = kategorien; if (profilDienste) pr.dienste = profilDienste; });
+    einst.aendern((x) => { const pr = x.profile.find((y) => y.id === p.id); if (body.name) pr.name = String(body.name).slice(0, 40); if (/^#[0-9a-f]{6}$/i.test(body.farbe || '')) pr.farbe = body.farbe; if (body.kategorien) pr.kategorien = kategorien; if (profilDienste) pr.dienste = profilDienste; if (ruhezeiten) pr.ruhezeiten = ruhezeiten; if (sicher) pr.sicher = sicher; if (limits) pr.limits = limits; });
     return { ok: true };
   });
   route('DELETE', '/api/profile/:id', ({ p }) => {
@@ -315,8 +464,8 @@ function webServer(k) {
     const httpUrl = (u, was) => { let x; try { x = new URL(String(u)); } catch (e) { f(`${was}: ungültige Adresse „${u}“`); } if (!['https:', 'http:'].includes(x.protocol)) f(`${was}: nur http(s)-Adressen`); return x; };
     const kategorien = new Set([...(Array.isArray(s.kategorien) ? s.kategorien : w().kategorien).map((k) => k?.id)]);
     liste('kategorien', (k) => { if (typeof k.name !== 'string') f(`Kategorie „${k.id}“ ohne Namen`); });
-    liste('listen', (l) => { httpUrl(l.url, `Liste „${l.id}“`); if (!kategorien.has(l.kategorie)) f(`Liste „${l.id}“: Kategorie „${l.kategorie}“ unbekannt`); });
-    liste('profile', (p) => { if (typeof p.name !== 'string' || !p.name) f(`Profil „${p.id}“ ohne Namen`); if (p.kategorien !== undefined && !objekt(p.kategorien)) f(`Profil „${p.id}“: Kategorien ungültig`); for (const [kid, kw] of Object.entries(p.kategorien || {})) { if (!kategorien.has(kid)) f(`Profil „${p.id}“: Kategorie „${kid}“ unbekannt`); if (!objekt(kw) || (kw.zeitplan !== undefined && !Array.isArray(kw.zeitplan))) f(`Profil „${p.id}“: Kategorie „${kid}“ ungültig`); } if (p.dienste !== undefined && !objekt(p.dienste)) f(`Profil „${p.id}“: Dienste ungültig`); });
+    liste('listen', (l) => { if (String(l.url).startsWith('eingebaut:')) { if (l.url !== 'eingebaut:anonym') f(`Liste „${l.id}“: eingebaute Liste unbekannt`); } else httpUrl(l.url, `Liste „${l.id}“`); if (!kategorien.has(l.kategorie)) f(`Liste „${l.id}“: Kategorie „${l.kategorie}“ unbekannt`); });
+    liste('profile', (p) => { if (typeof p.name !== 'string' || !p.name) f(`Profil „${p.id}“ ohne Namen`); if (p.kategorien !== undefined && !objekt(p.kategorien)) f(`Profil „${p.id}“: Kategorien ungültig`); for (const [kid, kw] of Object.entries(p.kategorien || {})) { if (!kategorien.has(kid)) f(`Profil „${p.id}“: Kategorie „${kid}“ unbekannt`); if (!objekt(kw) || (kw.zeitplan !== undefined && !Array.isArray(kw.zeitplan))) f(`Profil „${p.id}“: Kategorie „${kid}“ ungültig`); } if (p.dienste !== undefined && !objekt(p.dienste)) f(`Profil „${p.id}“: Dienste ungültig`); if (p.ruhezeiten !== undefined && (!objekt(p.ruhezeiten) || !Object.values(p.ruhezeiten).every(Array.isArray))) f(`Profil „${p.id}“: Ruhezeiten ungültig`); if (p.limits !== undefined && (!objekt(p.limits) || !Object.entries(p.limits).every(([z, m]) => limitZielOk(z) && Number(m) >= 5 && Number(m) <= 1440))) f(`Profil „${p.id}“: Zeitlimits ungültig`); if (p.sicher !== undefined && !objekt(p.sicher)) f(`Profil „${p.id}“: sichere Suche ungültig`); });
     if (Array.isArray(s.profile) && !s.profile.some((p) => p.id === 'standard')) f('Profil „Standard“ fehlt');
     const profile = Array.isArray(s.profile) ? s.profile : w().profile;
     const geltungOk = (g) => g === 'alle' || /^geraet:.{1,64}$/.test(g) || (String(g).startsWith('profil:') && profile.some((p) => `profil:${p.id}` === g));
@@ -333,6 +482,9 @@ function webServer(k) {
       if (s.dns.gateway !== undefined && s.dns.gateway !== '' && !net.isIP(String(s.dns.gateway))) f(`Gateway „${s.dns.gateway}“ ist keine IP-Adresse`);
       if (s.dns.bremse !== undefined && (!objekt(s.dns.bremse) || !(s.dns.bremse.rate > 0) || !(s.dns.bremse.schub > 0))) f('Bremse ungültig');
     }
+    if (s.meldungen !== undefined && (!objekt(s.meldungen) || (s.meldungen.profile !== undefined && !Array.isArray(s.meldungen.profile)) || (s.meldungen.kategorien !== undefined && !Array.isArray(s.meldungen.kategorien)))) f('Meldungen ungültig');
+    if (s.unterwegs !== undefined && objekt(s.unterwegs) && ((s.unterwegs.basis && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(String(s.unterwegs.basis))) || (s.unterwegs.email && !/^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(s.unterwegs.email))))) f('Schutz unterwegs: Basisdomain oder E-Mail ungültig');
+    if (s.unterwegs !== undefined && (!objekt(s.unterwegs) || (s.unterwegs.geraete !== undefined && !objekt(s.unterwegs.geraete)) || !Object.values(s.unterwegs.geraete || {}).every((g) => objekt(g) && /^dns-[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(String(g.kennung)) && /^[A-Za-z0-9_-]{20,64}$/.test(String(g.geheim))))) f('Schutz unterwegs ungültig');
     if (s.protokoll !== undefined && (!objekt(s.protokoll) || (s.protokoll.tage !== undefined && !(Number(s.protokoll.tage) >= 1 && Number(s.protokoll.tage) <= 90)))) f('Protokoll-Tage: 1 bis 90');
     if (s.web !== undefined) { if (!objekt(s.web)) f('„web“ ist kein Objekt'); if (s.web.vertrauteProxies !== undefined) { if (!Array.isArray(s.web.vertrauteProxies)) f('vertraute Proxys als Liste'); try { s.web.vertrauteProxies.forEach(netz); } catch (e) { f(e.message); } } }
   };
@@ -345,6 +497,9 @@ function webServer(k) {
       if (s.dns) { const { erlaubteNetze, lokaleZonen, lokaleRecords, gateway, bremse } = s.dns; x.dns = { ...x.dns, ...(erlaubteNetze !== undefined ? { erlaubteNetze } : {}), ...(lokaleZonen !== undefined ? { lokaleZonen } : {}), ...(lokaleRecords !== undefined ? { lokaleRecords } : {}), ...(gateway !== undefined ? { gateway } : {}), ...(bremse !== undefined ? { bremse } : {}) }; }
       if (s.protokoll?.tage !== undefined) x.protokoll = { ...x.protokoll, tage: Math.round(Number(s.protokoll.tage)) };
       if (typeof s.sperrseite?.an === 'boolean') x.sperrseite = { an: s.sperrseite.an };
+      // Kinderschutz: Meldungen (ältere Sicherungen bringen noch ntfy-Felder mit – werden nicht übernommen)
+      if (s.meldungen && typeof s.meldungen === 'object') { const { url, thema, schluessel, schluesselGesetzt, ...rest } = s.meldungen; x.meldungen = { ...x.meldungen, ...rest }; }
+      if (s.unterwegs && typeof s.unterwegs === 'object') x.unterwegs = { an: !!s.unterwegs.an, basis: String(s.unterwegs.basis || ''), email: String(s.unterwegs.email || ''), geraete: { ...(s.unterwegs.geraete || {}) } };
       if (s.web?.vertrauteProxies !== undefined) x.web = { ...(x.web || {}), vertrauteProxies: s.web.vertrauteProxies.map((n) => netz(n).text) };
     });
   };
@@ -366,6 +521,11 @@ function webServer(k) {
       pruefe(body.bestaetigt === true, 'Bitte ausdrücklich bestätigen');
       try { return await spiegel.partnerKoppeln({ rolle: body.rolle, url: body.url, name: body.name, passwort: body.passwort, eigene_url: body.eigene_url }); } catch (e) { throw new HttpFehler(e.status || 502, e.message); }
     });
+    // Kinderschutz: Ereignisse und Nutzung des Ersatzes (mit Kopplungscode)
+    route('POST', '/api/spiegel/meldung', ({ req, body }) => {
+      const code = /^Bearer\s+(\S+)$/.exec(String(req.headers.authorization || ''));
+      try { return spiegel.meldungFuer(code ? code[1] : '', body); } catch (e) { throw new HttpFehler(e.status || 500, e.message); }
+    }, { offen: true });
     // vom Ersatz abgerufen: ohne Sitzung, mit Kopplungscode (Bearer)
     route('GET', '/api/spiegel/stand', ({ req }) => {
       const code = /^Bearer\s+(\S+)$/.exec(String(req.headers.authorization || ''));
@@ -376,9 +536,34 @@ function webServer(k) {
   const ERSATZ_ERLAUBT = /^\/api\/(anmelden|abmelden|passwort|spiegel(\/.*)?|cache\/leeren|listen\/aktualisieren|einstellungen\/unifi(\/test)?)$/;
 
   // ── Verteilung ────────────────────────────────────────────────────────────
+  // Unter einem Gerätenamen (dns-…<basis>, von draußen über FAH-Proxy) gibt es nur DoH, die ACME-Prüfung und das Profil – nie Oberfläche oder API
+  const nurText = (res, status, text) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(text); };
+  const profilSenden = (res, geheim) => {
+    const gid = unterwegs?.geraetVonGeheimnis(geheim), xml = gid ? unterwegs.profil(gid) : null;
+    if (!xml) return nurText(res, 404, 'Nicht gefunden');
+    res.writeHead(200, { 'Content-Type': 'application/x-apple-aspen-config', 'Content-Disposition': `attachment; filename="fah-adblock-${unterwegs.u.geraete[gid].kennung}.mobileconfig"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    return res.end(xml);
+  };
+  async function geraeteHost(req, res, url, host) {
+    const acmeTreffer = /^\/\.well-known\/acme-challenge\/([A-Za-z0-9_-]{8,128})$/.exec(url.pathname);
+    if (acmeTreffer && req.method === 'GET') { const a = acme?.antwort(acmeTreffer[1]); return a ? nurText(res, 200, a) : nurText(res, 404, 'Nicht gefunden'); }
+    const doh = /^\/dns-query\/([A-Za-z0-9_-]{20,64})$/.exec(url.pathname);
+    if (doh && (req.method === 'GET' || req.method === 'POST')) {
+      const gid = unterwegs.geraetVonGeheimnis(doh[1]);
+      if (!gid || unterwegs.geraetVonHost(host) !== gid) return nurText(res, 404, 'Nicht gefunden');
+      return unterwegs.doh(req, res, gid, verbindung(req).client);
+    }
+    const prof = /^\/unterwegs\/([A-Za-z0-9_-]{20,64})\/profil\.mobileconfig$/.exec(url.pathname);
+    if (prof && req.method === 'GET') return profilSenden(res, prof[1]);
+    return nurText(res, 404, 'Nicht gefunden');
+  }
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     try {
+      const host = String(req.headers.host || '').toLowerCase().split(':')[0];
+      if (unterwegs && unterwegs.istHost(host)) return await geraeteHost(req, res, url, host);
+      const prof = /^\/unterwegs\/([A-Za-z0-9_-]{20,64})\/profil\.mobileconfig$/.exec(url.pathname);
+      if (prof && req.method === 'GET') return profilSenden(res, prof[1]);
       if (url.pathname.startsWith('/api/')) {
         const r = routen.find((x) => x.methode === req.method && x.re.test(url.pathname));
         if (!r) throw new HttpFehler(404, 'Unbekannte Adresse');
@@ -393,6 +578,8 @@ function webServer(k) {
           if (!r.offen && req.headers['x-csrf'] !== nutzer.csrf) throw new HttpFehler(403, 'Sitzung abgelaufen – bitte neu laden');
         }
         const m = r.re.exec(url.pathname), p = Object.fromEntries(r.namen.map((n, i) => [n, m[i + 1]]));
+        // Prototype-Pollution: Pfadteile wie __proto__ werden als Objektschlüssel benutzt (Geräte, Dienste, Profile)
+        if (Object.values(p).some((x) => { try { return ['__proto__', 'constructor', 'prototype'].includes(decodeURIComponent(x)); } catch (e) { return true; } })) throw new HttpFehler(400, 'Ungültige Adresse');
         const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await koerper(req) : {};
         const ergebnis = await r.fn({ req, res, p, q: url.searchParams, body, nutzer });
         if (ergebnis === undefined) return;

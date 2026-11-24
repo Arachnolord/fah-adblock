@@ -370,6 +370,25 @@ ebay.com,ebay.de,ebayimg.com|eBay|Online-Marktplatz|
 spiegel.de|DER SPIEGEL|Nachrichten|
 heise.de|heise online|Technik-Nachrichten|
 tagesschau.de|tagesschau (ARD)|Nachrichten|
+ngl.link|NGL|anonyme Fragen von Freunden und Fremden (Instagram-/Snapchat-Erweiterung)|häufiges Werkzeug für Cybermobbing – im Kinderschutz gesperrt
+tellonym.me|Tellonym|anonyme Nachrichten und Fragen|häufiges Werkzeug für Cybermobbing – im Kinderschutz gesperrt
+ask.fm|ASKfm|anonyme Fragen und Antworten|häufiges Werkzeug für Cybermobbing
+getsendit.com,onyolo.com,lipsi.app,sarahah.com,curiouscat.live|Anonyme Frage-Apps|anonyme Nachrichten (sendit, YOLO, Lipsi, Sarahah, CuriousCat)|häufiges Werkzeug für Cybermobbing
+jodel.com,whisper.sh,yikyak.com|Anonyme Ortschats|anonyme Beiträge an Menschen in der Nähe (Jodel, Whisper, Yik Yak)|
+getwinkapp.com,yubo.live,wizz.chat,hoop.photo,liveme.com|Freunde-finden-Apps|Kontakt und Live-Video mit Fremden (Wink, Yubo, Wizz, Hoop, LiveMe)|dort sprechen Fremde Kinder an
+kik.com|Kik|Messenger mit Benutzernamen statt Telefonnummer|bei Kindern riskant: Kontakt mit Fremden
+omegle.com,uhmegle.com,azarlive.com,holla.world,chatspin.com,emeraldchat.com,chathub.cam,shagle.com,camsurf.com,bazoocam.org,chatrandom.com,tinychat.com,thundr.com,chitchat.gg,talkwithstranger.com,chatib.us,strangermeetup.com|Zufalls-Videochat|Video- oder Textchat mit zufälligen Fremden|für Kinder ungeeignet
+nummergegenkummer.de|Nummer gegen Kummer|Kinder- und Jugendtelefon 116 111, Elterntelefon|Hilfsangebot – immer erreichbar
+krisenchat.de|krisenchat|Krisenberatung per Chat für junge Menschen, rund um die Uhr|Hilfsangebot – immer erreichbar
+jugendnotmail.de|JugendNotmail|Online-Beratung für Kinder und Jugendliche|Hilfsangebot – immer erreichbar
+juuuport.de|JUUUPORT|Jugendliche beraten bei Cybermobbing und Ärger im Netz|Hilfsangebot – immer erreichbar
+telefonseelsorge.de|TelefonSeelsorge|Seelsorge per Telefon, Chat und Mail|Hilfsangebot – immer erreichbar
+klicksafe.de,jugendschutz.net,internet-beschwerdestelle.de,hateaid.org,polizei-beratung.de,cybermobbing-hilfe.de|Meldestellen & Netz-Hilfe|Inhalte melden, Hilfe bei Hass, Erpressung und Mobbing|Hilfsangebot – immer erreichbar
+forcesafesearch.google.com|Google|SafeSearch-Fassung der Google-Suche (sichere Suche)|
+restrict.youtube.com,restrictmoderate.youtube.com|YouTube|eingeschränkter Modus von YouTube|
+strict.bing.com|Bing|SafeSearch-Fassung von Bing|
+safe.duckduckgo.com|DuckDuckGo|sichere Suche von DuckDuckGo|
+mask.icloud.com,mask-h2.icloud.com|Apple iCloud Privat-Relay|verschlüsselt DNS und Verkehr an FAH-Adblock vorbei|im Profil mit „Umgehung“ gesperrt – Safari fällt dann auf normales DNS zurück
 `;
 
   // Schlüsselwörter in Teilen des Namens (links vom bekannten Teil) → was dieser Rechner genau macht

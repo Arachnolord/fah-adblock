@@ -14,6 +14,9 @@
 //   · danach die kurz unter „ip:…“ gelaufenen Anfragen dem Gerät zuordnen (onZuordnung)
 'use strict';
 const https = require('https');
+const http = require('http');
+const tls = require('tls');
+const net = require('net');
 const dnsPacket = require('dns-packet');
 const dgram = require('dgram');
 
@@ -25,6 +28,28 @@ function unifiHole({ url, schluessel }, pfad) {
     });
     req.on('timeout', () => req.destroy(new Error('UniFi: Zeitüberschreitung')));
     req.on('error', nein);
+  });
+}
+
+// UniFi-Anfrage für die Portfreigabe des Schutzes unterwegs (Schlüssel mit Schreibrecht): erst TLS aufbauen und den Abdruck prüfen
+// (beim ersten Mal gemerkt: z.merken), dann auf genau dieser Verbindung senden.
+function unifiAnfrage(z, methode, pfad, daten) {
+  return new Promise((ok, nein) => {
+    const u = new URL(z.url.replace(/\/$/, '') + pfad), host = u.hostname, text = daten === undefined ? undefined : JSON.stringify(daten);
+    const s = tls.connect({ host, port: Number(u.port || 443), servername: net.isIP(host) ? undefined : host, rejectUnauthorized: false });
+    const uhr = setTimeout(() => { s.destroy(); nein(new Error('UniFi: Zeitüberschreitung')); }, 15000);
+    s.once('error', (e) => { clearTimeout(uhr); nein(new Error(`UniFi: ${e.message}`)); });
+    s.once('secureConnect', () => {
+      const fp = s.getPeerCertificate().fingerprint256 || '';
+      if (z.abdruck && fp !== z.abdruck) { clearTimeout(uhr); s.destroy(); return nein(new Error('UniFi: Zertifikat der Konsole hat sich geändert – nichts gesendet')); }
+      if (!z.abdruck && fp && z.merken) z.merken(fp);
+      const req = http.request({ method: methode, path: u.pathname + u.search, createConnection: () => s, headers: { Host: u.host, 'X-API-KEY': z.schluessel, Accept: 'application/json', ...(text !== undefined ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) } : {}) } }, (res) => {
+        let t = ''; res.on('data', (d) => { if (t.length < 2e6) t += d; });
+        res.on('end', () => { clearTimeout(uhr); let j = null; try { j = JSON.parse(t); } catch (e) {} if (res.statusCode >= 400) return nein(new Error(`UniFi: HTTP ${res.statusCode}${j?.meta?.msg ? ` (${j.meta.msg})` : ''}`)); ok(j || {}); });
+      });
+      req.on('error', (e) => { clearTimeout(uhr); nein(new Error(`UniFi: ${e.message}`)); });
+      req.end(text);
+    });
   });
 }
 
@@ -84,7 +109,7 @@ class Geraete {
       const gemeldet = new Set();
       for (const c of j.data || []) {
         if (!c.mac) continue;
-        const eintrag = { mac: c.mac.toLowerCase(), name: clientName(c), netz: c.network || netzNamen[c.network_id] || (c.is_wired === false ? 'WLAN' : ''), ip: c.ip || c.last_ip || '', verbunden: (c.assoc_time || c.latest_assoc_time || 0) * 1000, icon: symbolId(c) };
+        const eintrag = { mac: c.mac.toLowerCase(), name: clientName(c), netz: c.network || netzNamen[c.network_id] || (c.is_wired === false ? 'WLAN' : ''), ip: c.ip || c.last_ip || '', verbunden: (c.assoc_time || c.latest_assoc_time || 0) * 1000, icon: symbolId(c), gesehen: this.jetzt() };
         this.jeMac.set(eintrag.mac, eintrag);
         if (eintrag.ip) { this.jeIp.set(eintrag.ip, { ...eintrag, quelle: 'unifi', ts: this.jetzt() }); gemeldet.add(eintrag.ip); }
         n++;
@@ -156,4 +181,4 @@ class Geraete {
   status() { return { unifi: { stand: this.stand, fehler: this.fehler, geraete: this.online ?? this.jeMac.size, bekannt: this.jeMac.size } }; }
 }
 
-module.exports = { Geraete, unifiHole, clientName, symbolId };
+module.exports = { Geraete, unifiHole, unifiAnfrage, clientName, symbolId };

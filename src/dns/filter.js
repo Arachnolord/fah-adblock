@@ -17,10 +17,16 @@
 //   3b. Dienste (src/dienste.js, Rubriken wie bei AdGuard): „frei“ = geschützt, keine Liste blockt ihn (Vorgabe für
 //      Medien, Musik, Geräte-Grundfunktionen); „sperren“ = vom Betreiber gesperrt (alle/Profil/Gerät);
 //      „listen“ = normal, es entscheiden Blocklisten und Profil (Vorgabe für Social Media, Spiele, Shopping …).
+//   Kinderschutz (23.11.2026):
+//   1b. Hilfsangebote (Rubrik „Hilfe & Beratung“) → immer erlaubt, vor jeder Sperre
+//   3a. Ruhezeit einer Rubrik im Profil (z. B. Messenger 21:00–06:30) → geblockt
+//   3a. Zeitlimit eines Dienstes oder einer Rubrik für heute aufgebraucht → geblockt
+//   Sichere Suche (sicherZiel): Google/Bing/DuckDuckGo und YouTube werden auf ihre gefilterte Fassung umgelenkt (server.js).
 // Regeln: „beispiel.de“ gilt für die Domain und alle Subdomains, „*.beispiel.de“ nur für Subdomains.
 'use strict';
 const { normDomain, suffixe } = require('../netz');
 const dienste = require('../dienste');
+const kinderschutz = require('../daten/kinderschutz');
 
 const WOCHENTAG = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
 function zeitVon(ts, zeitzone) {
@@ -53,8 +59,8 @@ function musterLesen(text) {
 }
 
 class Filter {
-  constructor({ listen, jetzt = () => Date.now(), zeitzone = process.env.TZ || 'Europe/Berlin' }) {
-    Object.assign(this, { listen, jetzt, zeitzone });
+  constructor({ listen, jetzt = () => Date.now(), zeitzone = process.env.TZ || 'Europe/Berlin', zeitkonto = null }) {
+    Object.assign(this, { listen, jetzt, zeitzone, zeitkonto });
     this.regeln = []; this.regelIndex = new Map();
     this.profile = new Map(); this.kategorieVonListe = new Map();
     this.geraete = {}; this.pausen = { global: 0, geraete: {} };
@@ -111,17 +117,38 @@ class Filter {
     }
     return null;
   }
+  // Sichere Suche: Umlenkziel für diesen Namen im Profil des Geräts (nicht während einer Pause), sonst null
+  sicherZiel(geraetId, name, jetzt = this.jetzt()) {
+    if (this.pauseBis(geraetId, jetzt)) return null;
+    return kinderschutz.sicherZiel(String(name || '').toLowerCase().replace(/\.$/, ''), this.profilVon(geraetId).sicher);
+  }
+  // Zeitlimit-Ziele eines Dienstes in einem Profil (für das Zeitkonto)
+  limitZiele(profil, dienst) {
+    const l = profil?.limits; if (!l || !dienst || dienst.fest) return [];
+    const z = [];
+    if (l[`dienst:${dienst.id}`]) z.push(`dienst:${dienst.id}`);
+    if (l[`rubrik:${dienst.gruppe}`] && !dienst.einzelnFrei) z.push(`rubrik:${dienst.gruppe}`);
+    return z;
+  }
   entscheide({ geraetId = '', name, jetzt = this.jetzt() }) {
     const domain = String(name || '').toLowerCase().replace(/\.$/, '');
     if (!domain) return { aktion: 'erlaubt', grund: 'leer' };
     const profil = this.profilVon(geraetId);
     const pause = this.pauseBis(geraetId, jetzt);
     if (pause) return { aktion: 'erlaubt', grund: 'Pause', bis: pause, profil: profil.id };
+    const dienst = this.dienstVon(domain);
+    if (dienst?.fest) return { aktion: 'erlaubt', grund: 'Hilfsangebot', dienst: dienst.id, dienstName: dienst.name, profil: profil.id };
     const frei = this.passendeRegeln(domain, 'erlauben', geraetId, profil.id, jetzt);
     if (frei.length) return { aktion: 'erlaubt', grund: 'Freigabe', regel: frei[0].id, profil: profil.id };
     const sperre = this.passendeRegeln(domain, 'sperren', geraetId, profil.id, jetzt);
     if (sperre.length) return { aktion: 'geblockt', grund: 'Eigene Regel', regel: sperre[0].id, profil: profil.id };
-    const dienst = this.dienstVon(domain);
+    if (dienst && !dienst.mitbenutzt?.some((m) => domain === m || domain.endsWith('.' + m))) {
+      // Ruhezeit der Rubrik (einzeln freigestellte Dienste wie Pokémon GO zählen nicht zur Rubrik)
+      const ruhe = !dienst.einzelnFrei && profil.ruhezeiten?.[dienst.gruppe];
+      if (Array.isArray(ruhe) && ruhe.length && zeitplanAktiv(ruhe, jetzt, this.zeitzone)) return { aktion: 'geblockt', grund: 'Ruhezeit', dienst: dienst.id, dienstName: dienst.name, rubrik: dienst.gruppe, profil: profil.id };
+      const limit = this.zeitkonto?.erschoepft(geraetId, profil, dienst, jetzt);
+      if (limit) return { aktion: 'geblockt', grund: 'Zeitlimit', dienst: dienst.id, dienstName: dienst.name, ziel: limit, profil: profil.id };
+    }
     if (dienst) {
       const modus = this.dienstModus(dienst, geraetId, profil);
       if (modus === 'sperren' && !dienst.mitbenutzt?.some((m) => domain === m || domain.endsWith('.' + m))) return { aktion: 'geblockt', grund: 'Dienst gesperrt', dienst: dienst.id, dienstName: dienst.name, profil: profil.id };
