@@ -128,7 +128,9 @@ function webServer(k) {
     const bekannt = new Set(stat.map((s) => s.id));
     const liste = stat.map((s) => ({ ...s, icon: geraete.iconVon?.(s.id) || null, name: einstG[s.id]?.name || (s.name === s.id || s.name === s.ip ? geraete.nameVon(s.id) || s.name : s.name), eigenerName: !!einstG[s.id]?.name, profil: filter.profilVon(s.id).id, pauseBis: filter.pauseBis(s.id, jetzt) }));
     for (const [gid, g] of Object.entries(einstG)) if (!bekannt.has(gid)) liste.push({ id: gid, icon: geraete.iconVon?.(gid) || null, name: g.name || geraete.nameVon(gid) || gid, eigenerName: !!g.name, ip: '', zuletzt: 0, erlaubt: 0, geblockt: 0, quote: 0, kurve: [], profil: filter.profilVon(gid).id, pauseBis: filter.pauseBis(gid, jetzt) });
-    return { geraete: liste, profile: w().profile.map((p) => ({ id: p.id, name: p.name, farbe: p.farbe })) };
+    const inListe = new Set(liste.map((x) => x.id));
+    const unifiBekannt = (geraete.bekannteUnifi?.() || []).filter((x) => !inListe.has(x.id)).sort((a, b) => a.name.localeCompare(b.name, 'de')).slice(0, 500);
+    return { geraete: liste, unifiBekannt, profile: w().profile.map((p) => ({ id: p.id, name: p.name, farbe: p.farbe })) };
   });
   // Gerätesymbole aus UniFi (static.ui.com) – einmal geladen und in data/symbole zwischengespeichert, damit der Browser nur diese Seite fragt
   const symbolFehler = new Map();
@@ -256,12 +258,16 @@ function webServer(k) {
     return k;
   };
   route('PUT', '/api/unterwegs/geraete/:id', ({ p, body }) => {
-    const gid = decodeURIComponent(p.id); pruefe(gid.length <= 64, 'Ungültige Geräte-ID');
+    let gid = decodeURIComponent(p.id); pruefe(gid.length <= 64, 'Ungültige Geräte-ID');
+    // Von Hand per MAC (Gerät gerade nicht im Netz, z. B. Reiserouter unterwegs): Schreibweise vereinheitlichen (aa:bb:cc:dd:ee:ff)
+    if (/^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(gid)) gid = gid.toLowerCase().replace(/-/g, ':');
+    const name = body.name === undefined ? '' : String(body.name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
     let wunsch = null;
     if (body.kennung !== undefined) { wunsch = `dns-${String(body.kennung || '').trim().toLowerCase().replace(/^dns-/, '').replace(/\..*$/, '')}`; pruefe(KENNUNG.test(wunsch), 'Name: Kleinbuchstaben, Ziffern und Bindestrich, 1–24 Zeichen (z. B. fairphone)'); pruefe(!Object.entries(w().unterwegs.geraete).some(([id, y]) => id !== gid && y.kennung === wunsch), 'Diesen Namen hat schon ein anderes Gerät'); }
     einst.aendern((x) => {
       const g = x.unterwegs.geraete[gid];
-      if (!g) x.unterwegs.geraete[gid] = { kennung: freieKennung(x, wunsch || kennungAus(x.geraete[gid]?.name || geraete.nameVon(gid)), gid), geheim: neuesGeheimnis(), an: body.an !== false };
+      if (name && !x.geraete[gid]?.name && !geraete.jeMac?.get(gid)?.name) x.geraete[gid] = { ...(x.geraete[gid] || {}), name };   // Name nur, wenn weder ein eigener noch einer aus UniFi bekannt ist
+      if (!g) x.unterwegs.geraete[gid] = { kennung: freieKennung(x, wunsch || kennungAus(name || x.geraete[gid]?.name || geraete.nameVon(gid)), gid), geheim: neuesGeheimnis(), an: body.an !== false };
       else { if (body.an !== undefined) g.an = !!body.an; if (wunsch) g.kennung = wunsch; }
     });
     unterwegsWeiter(true);

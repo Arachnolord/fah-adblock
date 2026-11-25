@@ -560,6 +560,7 @@ try {
         vpnLaptop.name === 'Laptop · VPN' && vpnLaptop.id === 'ip:192.168.5.3' && vpnLaptop.netz === 'VPN' && vpnRouter.name === 'Reiserouter · VPN' && vpnLeer.name === 'VPN 192.168.5.5' && vpnFremd.name === 'VPN 192.168.5.9' && gE.von('192.168.5.3').name === 'Arbeitslaptop',
         JSON.stringify([vpnLaptop.name, vpnRouter.name, vpnLeer.name, vpnFremd.name])); }
     pruefe('Geräte: ohne Namen → Hersteller bzw. „private MAC“', clientName({ mac: '94:be:46:00:00:01', oui: 'Apple' }) === 'Gerät von Apple' && clientName({ mac: '9a:00:00:00:00:31' }) === 'Gerät mit privater MAC' && clientName({ mac: '52:54:00:00:00:9d' }) === 'Gerät mit privater MAC' && clientName({ mac: '94:be:46:00:00:01' }) === '' && clientName({ mac: 'x', hostname: ' pc ' }) === 'pc');
+    { const bek = g.bekannteUnifi(); pruefe('Geräte: Liste aller UniFi-bekannten Geräte für „Gerät hinzufügen“ – auch offline (rest/user), mit Namen', bek.some((x) => x.id === 'cc:cc:cc:cc:cc:01' && x.name === 'Gast Smartphone ALT' && x.offline) && bek.some((x) => x.id === MAC61 && !x.offline), JSON.stringify(bek)); }
     pruefe('Geräte: Namen auch für bekannte Offline-Geräte (UniFi rest/user), Online-Name bleibt', g.nameVon('cc:cc:cc:cc:cc:01') === 'Gast Smartphone ALT' && g.nameVon('52:54:00:00:00:9d') === 'Gerät mit privater MAC' && g.nameVon('ip:192.168.1.5') === '' && g.iconVon(MAC61) === 1681 && g.iconVon(MAC60) === null && g.nameVon(MAC60) === 'Switch' && g.status().unifi.geraete === 2);
     g.von('192.168.1.99'); const r1 = rufeG; uhrG += 16000; g.von('192.168.1.99'); await g.laeuft; const r2 = rufeG; uhrG += 16000; g.von('192.168.1.99'); const r3 = rufeG;
     pruefe('Geräte: sofortige UniFi-Abfragen gedrosselt (15 s global, 5 min je IP), VPN löst keine aus', r1 === 1 && r2 === 2 && r3 === 2 && (g.von('192.168.5.9'), rufeG === 2), `${r1},${r2},${r3},${rufeG}`);
@@ -1076,6 +1077,12 @@ try {
     await sK('/api/unterwegs', { an: true, basis: 'example.org' }, 'PUT');
     const ug = await (await sK('/api/unterwegs/geraete/kind', { an: true }, 'PUT')).json();
     const gU = ug.geraete.find((g) => g.id === 'kind');
+    { // 25.11.2026: Gerät von Hand per MAC (gerade nicht im Netz, z. B. Reiserouter): Schreibweise vereinheitlicht, Name gesetzt, kurzer Name daraus
+      const r = await sK('/api/unterwegs/geraete/AA-BB-CC-DD-EE-77', { an: true, name: '  Reise   Router ' }, 'PUT'), mac = 'aa:bb:cc:dd:ee:77';
+      const ugM = eW.werte.unterwegs.geraete[mac], nameM = eW.werte.geraete[mac]?.name;
+      await sK(`/api/unterwegs/geraete/${encodeURIComponent(mac)}`, {}, 'DELETE'); eW.aendern((x) => { delete x.geraete[mac]; });
+      pruefe('Unterwegs: Gerät von Hand per MAC (AA-BB-… → aa:bb:…), Name übernommen und bereinigt, kurzer Name daraus (dns-reise-router)',
+        r.status === 200 && ugM?.kennung === 'dns-reise-router' && nameM === 'Reise Router' && !eW.werte.unterwegs.geraete[mac], JSON.stringify({ status: r.status, ugM: ugM && { kennung: ugM.kennung }, nameM })); }
     const hostU = gU.host, port = webK.address().port;
     const mitHost = (pfad, o = {}) => new Promise((ok) => { const rq = http.request({ host: '127.0.0.1', port, path: pfad, method: o.method || 'GET', headers: { host: hostU, ...(o.headers || {}) } }, (res) => { const t = []; res.on('data', (d) => t.push(d)); res.on('end', () => ok({ status: res.statusCode, typ: res.headers['content-type'], buf: Buffer.concat(t) })); }); rq.end(o.body); });
     const ui = await mitHost('/'), api = await mitHost('/api/uebersicht'), anm = await mitHost('/api/anmelden', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"admin","passwort":"admin"}' });

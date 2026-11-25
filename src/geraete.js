@@ -192,6 +192,8 @@ class Geraete {
     const name = eigen || u?.name || (vpnName ? `${vpnName} · VPN` : null) || this.ptr.get(ip)?.name || (this.vpnNetz.test(ip) ? `VPN ${ip}` : ip);
     return { id, name, mac: u?.mac || '', netz: u?.netz || (this.vpnNetz.test(ip) ? 'VPN' : ''), ip };
   }
+  /** Alle Clients, die UniFi kennt – auch gerade offline (rest/user) – für „Gerät hinzufügen“ (25.11.2026: Reiserouter unterwegs) */
+  bekannteUnifi() { return [...this.jeMac.values()].filter((e) => e.mac).map((e) => ({ id: e.mac, name: e.name || clientName({ mac: e.mac }), offline: !!e.offline || !e.ip })); }
   iconVon(id) { return this.jeMac.get(String(id || '').toLowerCase())?.icon || null; }
   nameVon(id) { const mac = String(id || '').toLowerCase(); return this.jeMac.get(mac)?.name || (/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/.test(mac) ? clientName({ mac }) : ''); }
   status() { return { unifi: { stand: this.stand, fehler: this.fehler, geraete: this.online ?? this.jeMac.size, bekannt: this.jeMac.size } }; }

@@ -995,6 +995,11 @@
           <button class="knopf klein leise" data-ugname title="Kurzen Namen wählen, z. B. fairphone">✏️ Name</button><button class="knopf klein leise" data-ugschalten>${d.an ? 'Ausschalten' : 'Einschalten'}</button><button class="knopf klein leise" data-ugneu title="Neues Geheimnis für das iPhone-Profil (z. B. Gerät verloren) – der Name bleibt">Neu ausstellen</button><button class="knopf klein leise" data-ugweg aria-label="Entfernen">✕</button></div></div>`;
     };
     const ohneUnterwegs = g.geraete.filter((x) => !u?.geraete.some((d) => d.id === x.id) && !String(x.id).startsWith('ip:'));
+    // Auch Geräte, die gerade nicht im Netz sind (UniFi kennt sie noch) – und notfalls von Hand per MAC (25.11.2026: Reiserouter unterwegs)
+    const offlineBekannt = (g.unifiBekannt || []).filter((x) => !u?.geraete.some((d) => d.id === x.id));
+    const ugOptionen = (ohneUnterwegs.length ? `<optgroup label="Im Netz gesehen">${ohneUnterwegs.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} · Profil ${esc((g.profile.find((p) => p.id === x.profil) || {}).name || x.profil)}</option>`).join('')}</optgroup>` : '')
+      + (offlineBekannt.length ? `<optgroup label="Aus UniFi bekannt (gerade nicht im Netz)">${offlineBekannt.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</optgroup>` : '')
+      + '<option value="__mac__">➕ Anderes Gerät per MAC-Adresse …</option>';
     $('#haupt').innerHTML = `${hinweisband()}
       <div style="max-width:960px">
       <section class="karte"><div class="kartekopf">📱 Schutz unterwegs<span class="rechts">${u?.an ? (u.dot.laeuft ? `<span class="chip gruen">DoT läuft · Port ${u.dot.port}</span>` : '<span class="chip">an · DoT wartet auf Zertifikat</span>') : '<span class="chip">aus</span>'}</span></div><div class="kartekoerper" style="display:flex;flex-direction:column;gap:12px">
@@ -1004,7 +1009,9 @@
         <div class="formzeile"><div class="feld"><label for="ugbasis">Basisdomain</label><input id="ugbasis" type="text" value="${esc(u?.basis || '')}" placeholder="meinname.example.de"></div><div class="feld"><label for="ugmail">E-Mail für Let's Encrypt (optional)</label><input id="ugmail" type="email" value="${esc(u?.email || '')}" placeholder="name@example.de"></div></div>
         ${info('Die Basisdomain muss per Platzhalter (*.basisdomain) öffentlich auf deinen Anschluss zeigen (DynDNS). Alles Weitere erledigt FAH-Adblock selbst: Einträge in FAH-Proxy anlegen und löschen, Portfreigabe TCP 853 in der UCG, Zertifikate holen und erneuern.')}
         <div style="display:flex;justify-content:flex-end"><button class="knopf klein gruen" id="ugspeichern">Speichern</button></div>
-        ${u?.an ? `<div class="formzeile" style="align-items:flex-end"><div class="feld"><label for="ugneu">Gerät hinzufügen</label><select id="ugneu">${ohneUnterwegs.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} · Profil ${esc((g.profile.find((p) => p.id === x.profil) || {}).name || x.profil)}</option>`).join('') || '<option value="">– alle Geräte eingerichtet –</option>'}</select></div><button class="knopf klein" id="ughinzu">Hinzufügen</button><button class="knopf klein leise" id="ugzert">Zertifikate jetzt holen</button></div>` : ''}
+        ${u?.an ? `<div class="formzeile" style="align-items:flex-end"><div class="feld"><label for="ugneu">Gerät hinzufügen</label><select id="ugneu">${ugOptionen}</select></div><button class="knopf klein" id="ughinzu">Hinzufügen</button><button class="knopf klein leise" id="ugzert">Zertifikate jetzt holen</button></div>
+        <div class="formzeile versteckt" id="ugmanuell"><div class="feld"><label for="ugmac">MAC-Adresse</label><input id="ugmac" type="text" placeholder="aa:bb:cc:dd:ee:ff" autocapitalize="off" autocomplete="off" spellcheck="false"></div><div class="feld"><label for="ugmname">Name</label><input id="ugmname" type="text" placeholder="z. B. Reiserouter" maxlength="60"></div></div>
+        ${info('Ein Gerät, das gerade nicht im Netz ist (z. B. der Reiserouter unterwegs), steht unter „Aus UniFi bekannt“. Kennt UniFi es nicht, „Anderes Gerät per MAC-Adresse“ wählen und MAC und Namen eintragen – die MAC steht am Gerät oder im Router (beim Reiserouter: ether1).')}` : ''}
         ${u?.an ? freigabenHtml(u) : ''}
       </div><div class="zeilen">${(u?.geraete || []).map(ugZeile).join('') || (u?.an ? '<div class="leer">Noch kein Gerät eingerichtet.</div>' : '')}</div></section>
       </div>`;
@@ -1014,7 +1021,17 @@
     if ($('#ugkoppeln')) $('#ugkoppeln').onclick = () => sicher(() => api('/api/unterwegs/proxy', { methode: 'POST', daten: { urls: $('#ugpurls').value.split(/\s+/).filter(Boolean), name: $('#ugpname').value.trim(), passwort: $('#ugppw').value, code: $('#ugpcode').value.trim() || undefined } }), 'FAH-Proxy gekoppelt – Einträge werden automatisch gepflegt');
     if ($('#ugabgleich')) $('#ugabgleich').onclick = () => sicher(() => api('/api/unterwegs/freigaben', { methode: 'POST', daten: {} }), 'Abgeglichen');
     if ($('#ugentkoppeln')) $('#ugentkoppeln').onclick = () => { if (confirm('FAH-Proxy entkoppeln? Vorhandene Einträge bleiben in FAH-Proxy, werden aber nicht mehr gepflegt.')) sicher(() => api('/api/unterwegs/proxy', { methode: 'DELETE' }), 'Entkoppelt'); };
-    if ($('#ughinzu')) $('#ughinzu').onclick = () => { const id = $('#ugneu').value; if (id) sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(id)}`, { methode: 'PUT', daten: { an: true } }), 'Gerät eingerichtet – Freigaben und Zertifikat folgen automatisch'); };
+    if ($('#ugneu')) { const manuell = () => $('#ugmanuell')?.classList.toggle('versteckt', $('#ugneu').value !== '__mac__'); $('#ugneu').onchange = manuell; manuell(); }
+    if ($('#ughinzu')) $('#ughinzu').onclick = () => {
+      let id = $('#ugneu').value; const daten = { an: true };
+      if (id === '__mac__') {
+        const mac = $('#ugmac').value.trim();
+        if (!/^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(mac)) return toast('MAC-Adresse wie aa:bb:cc:dd:ee:ff eingeben', 'fehler');
+        id = mac.toLowerCase().replace(/-/g, ':'); daten.name = $('#ugmname').value.trim();
+        if (!daten.name) return toast('Bitte einen Namen eintragen (z. B. Reiserouter)', 'fehler');
+      }
+      if (id) sicher(() => api(`/api/unterwegs/geraete/${encodeURIComponent(id)}`, { methode: 'PUT', daten }), 'Gerät eingerichtet – Freigaben und Zertifikat folgen automatisch');
+    };
     if ($('#ugzert')) $('#ugzert').onclick = () => { toast('Zertifikate werden geholt … (bis zu einer Minute)'); sicher(() => api('/api/unterwegs/zertifikate', { methode: 'POST', daten: {} })); };
     haupt.onclick = async (e) => {
       const zeile = e.target.closest('[data-uggeraet]'); if (!zeile) return;

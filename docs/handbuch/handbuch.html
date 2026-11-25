@@ -92,7 +92,7 @@
     <h2>Handbuch</h2>
     <p>Einrichtung, Bedienung und jede Einstellung erklärt – inklusive der DNS-Einrichtung in UniFi.</p>
   </div>
-  <div class="fuss">Version 2026.11.25-5 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
+  <div class="fuss">Version 2026.11.25-6 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
 </section>
 
 <!-- ─────────────────────────── Inhalt ─────────────────────────── -->
@@ -643,7 +643,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
   <ol class="schritte">
     <li><i>📱 Unterwegs</i>: einschalten, Basisdomain eintragen (eine Domain, deren Unternamen per Platzhalter auf den Anschluss zeigen), <b>Speichern</b>.</li>
     <li><b>Einmalig FAH-Proxy koppeln:</b> die beiden FAH-Proxy-Adressen (Haupt und Fail-over) sind vorbelegt – Admin-Name, Passwort und ggf. 2FA-Code eingeben, <b>Koppeln</b>. FAH-Adblock legt sich dort ein eigenes Konto „fah-adblock“ mit der Rolle <b>Dienst</b> an (ab FAH-Proxy 0.9.6): Es darf nur die Gruppe <b>„AdBlock DNS Domains“</b> pflegen – keine anderen Einträge, keine Einstellungen, keine geschützten Seiten. Dein Passwort wird nicht gespeichert.</li>
-    <li>Gerät hinzufügen. Der Name ist kurz und lesbar (z. B. <span class="mono">dns-fairphone-gen-6.&lt;Basisdomain&gt;</span>), mit ✏️ änderbar.</li>
+    <li>Gerät hinzufügen. Die Liste zeigt Geräte, die im Netz gesehen wurden, und alle, die UniFi kennt – auch wenn sie gerade nicht da sind (z. B. der Reiserouter unterwegs). Kennt UniFi ein Gerät nicht: „Anderes Gerät per MAC-Adresse“ wählen und MAC und Namen eintragen. Der Name ist kurz und lesbar (z. B. <span class="mono">dns-fairphone-gen-6.&lt;Basisdomain&gt;</span>), mit ✏️ änderbar.</li>
     <li>Alles Weitere macht FAH-Adblock selbst: Eintrag in FAH-Proxy (an der gerade aktiven Instanz, FAH-Proxy spiegelt ihn), Portfreigabe <b>TCP 853</b> in der UCG, Zertifikat: FAH-Proxy holt es für den Namen ohnehin (Caddy, bei Bedarf ZeroSSL) und gibt es an FAH-Adblock weiter – je Gerät nur EIN Zertifikat, Caddy erneuert es. Wird ein Gerät gelöscht oder der Schutz ausgeschaltet, verschwinden Eintrag bzw. Portfreigabe wieder.</li>
     <li><b>Android:</b> 🤖 Android zeigt den Weg: Einstellungen → Netzwerk &amp; Internet → Privates DNS → „Hostname des Anbieters“ → Namen eintragen. <b>iPhone/iPad:</b> Ein DNS-Server lässt sich am iPhone nicht eintippen – iOS braucht ein Profil. <b>🍏 Apple</b> (iPhone, iPad, Mac) zeigt die Kurzanleitung und einen Link, der auch unterwegs funktioniert (vom Mac kopieren und per AirDrop ans iPhone schicken): in Safari öffnen → Zulassen → Einstellungen → Profil geladen → Installieren; danach unter Allgemein → VPN und Geräteverwaltung → DNS prüfen, dass „FAH-Adblock“ ausgewählt ist. Das Profil nutzt DNS-over-HTTPS, immer – auch im WLAN. <b>Mac:</b> Profil laden → Systemeinstellungen → Allgemein → Geräteverwaltung → Profil doppelklicken → Installieren (Mac-Passwort; das Profil gilt für den ganzen Mac, sonst lehnt macOS es mit „VPN-Dienst konnte nicht installiert werden“ ab). Danach steht „FAH-Adblock DNS“ unter Netzwerk → Filter.</li>
     <li><b>📡 MikroTik</b> (z. B. der Reiserouter, RouterOS 7): lädt eine kleine Einrichtungsdatei. Auf der Handy-Seite des Reiserouters hochladen – andere MikroTik-Router: unter Files hochladen, im Terminal <code>/import file-name=…</code>. Der Router fragt dann verschlüsselt bei FAH-Adblock (alle Geräte dahinter erscheinen als ein Gerät). Ohne Verbindung nach Hause fällt der Reiserouter auf seinen eigenen Werbeblocker zurück.</li>
