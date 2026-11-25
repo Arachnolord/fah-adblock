@@ -133,6 +133,17 @@ class Geraete {
           else { if (!da.name) da.name = name; if (!da.icon) da.icon = symbolId(c); }
         }
       } catch (e) {}
+      // VPN-Zugänge des WireGuard-Servers der Konsole: Name je fester Tunnel-IP (25.11.2026, Betreiber: „VPN-Geräte besser erkenntlich machen“) –
+      // aus „VPN 192.168.5.4“ wird z. B. „Reiserouter · VPN“. Ältere Konsolen ohne diesen Endpunkt: bleibt wie bisher.
+      try {
+        const wg = await this.holer(z, '/proxy/network/v2/api/site/default/wireguard/users');
+        const neu = new Map();
+        for (const x of (Array.isArray(wg) ? wg : wg?.data) || []) {
+          const ip = String(x?.interface_ip || '').split('/')[0], name = String(x?.name || '').trim().slice(0, 60);
+          if (net.isIPv4(ip) && name) neu.set(ip, name);
+        }
+        this.vpnNamen = neu;
+      } catch (e) {}
       this.stand = this.jetzt(); this.fehler = null; this.online = n;
       this.zuordnen();
       return n;
@@ -176,8 +187,9 @@ class Geraete {
     const id = u?.mac || `ip:${ip}`;
     const eigen = this.eigene()[id]?.name;
     if (!u && !this.vpnNetz.test(ip)) { if (!this.ohneMac.has(ip) && this.ohneMac.size < 1000) this.ohneMac.set(ip, this.jetzt()); this.bald(ip); }
-    if (!u && !eigen) this.ptrAnfragen(ip);
-    const name = eigen || u?.name || this.ptr.get(ip)?.name || (this.vpnNetz.test(ip) ? `VPN ${ip}` : ip);
+    const vpnName = this.vpnNetz.test(ip) ? this.vpnNamen?.get(ip) : null;
+    if (!u && !eigen && !vpnName) this.ptrAnfragen(ip);
+    const name = eigen || u?.name || (vpnName ? `${vpnName} · VPN` : null) || this.ptr.get(ip)?.name || (this.vpnNetz.test(ip) ? `VPN ${ip}` : ip);
     return { id, name, mac: u?.mac || '', netz: u?.netz || (this.vpnNetz.test(ip) ? 'VPN' : ''), ip };
   }
   iconVon(id) { return this.jeMac.get(String(id || '').toLowerCase())?.icon || null; }

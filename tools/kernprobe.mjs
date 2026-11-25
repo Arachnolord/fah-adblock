@@ -543,7 +543,7 @@ try {
     let uhrG = 5_000_000_000, rufeG = 0;
     const MAC61 = 'aa:aa:aa:aa:aa:61', MAC60 = 'bb:bb:bb:bb:bb:60', zuordnungen = [];
     const sta = [{ mac: MAC61.toUpperCase(), ip: '192.168.1.61', name: 'Neues Handy', dev_id: 1681, assoc_time: (uhrG - 120000) / 1000 }, { mac: MAC60, ip: '192.168.1.60', name: 'Switch', assoc_time: (uhrG - 600000) / 1000 }];
-    const holer = async (z, pfad) => { if (pfad.includes('stat/sta')) { rufeG++; return { data: sta }; } if (pfad.includes('rest/user')) return { data: [{ mac: 'CC:CC:CC:CC:CC:01', name: 'Gast Smartphone ALT' }, { mac: MAC60, name: '' }] }; return { data: [] }; };
+    const holer = async (z, pfad) => { if (pfad.includes('stat/sta')) { rufeG++; return { data: sta }; } if (pfad.includes('rest/user')) return { data: [{ mac: 'CC:CC:CC:CC:CC:01', name: 'Gast Smartphone ALT' }, { mac: MAC60, name: '' }] }; if (pfad.includes('wireguard/users')) return [{ name: 'Laptop', interface_ip: '192.168.5.3/32' }, { name: 'Reiserouter', interface_ip: '192.168.5.4' }, { name: '', interface_ip: '192.168.5.5' }]; return { data: [] }; };
     const g = new Geraete({ zugang: () => ({ url: 'https://x', schluessel: 'k' }), gateway: () => '', jetzt: () => uhrG, holer, protokoll: () => {}, onZuordnung: (z) => zuordnungen.push(z) });
     g.vorbelegen([{ mac: 'aa:aa:aa:aa:aa:50', name: 'Kinder-Tablet', ip: '192.168.1.50', zuletzt: uhrG - 1000 }, { ipId: true, ip: '192.168.1.60', zuletzt: uhrG - 5000 }, { ipId: true, ip: '192.168.5.2', zuletzt: uhrG }]);
     pruefe('Geräte: nach Neustart sofort per MAC erkannt (letzte Zuordnung aus dem Protokoll), ohne UniFi-Abfrage', g.von('192.168.1.50').id === 'aa:aa:aa:aa:aa:50' && rufeG === 0);
@@ -553,6 +553,12 @@ try {
       erst.id === 'ip:192.168.1.61' && rufeG === 1 && danach.id === MAC61 && danach.name === 'Neues Handy'
       && zuordnungen.some((z) => z.von === 'ip:192.168.1.61' && z.nach === MAC61 && z.seit === uhrG - 120000) && zuordnungen.some((z) => z.von === 'ip:192.168.1.60' && z.nach === MAC60)
       && !zuordnungen.some((z) => z.von.includes('192.168.5')), JSON.stringify(zuordnungen));
+    { // 25.11.2026: VPN-Zugänge tragen den Namen aus der Konsole (WireGuard-Nutzer) mit „· VPN“; eigener Name geht vor; unbekannte/namenlose bleiben „VPN <IP>“
+      const vpnLaptop = g.von('192.168.5.3'), vpnRouter = g.von('192.168.5.4'), vpnLeer = g.von('192.168.5.5'), vpnFremd = g.von('192.168.5.9');
+      const gE = new Geraete({ zugang: () => ({ url: 'https://x', schluessel: 'k' }), gateway: () => '', jetzt: () => uhrG, holer: (z, p) => (p.includes('stat/sta') ? Promise.resolve({ data: sta }) : holer(z, p)), protokoll: () => {}, eigene: () => ({ 'ip:192.168.5.3': { name: 'Arbeitslaptop' } }) }); await gE.unifiLesen();
+      pruefe('Geräte: VPN-Geräte mit Namen aus der Konsole („Laptop · VPN“, IP mit /32 oder ohne), eigener Name geht vor, ohne Namen weiter „VPN <IP>“; ID bleibt die IP',
+        vpnLaptop.name === 'Laptop · VPN' && vpnLaptop.id === 'ip:192.168.5.3' && vpnLaptop.netz === 'VPN' && vpnRouter.name === 'Reiserouter · VPN' && vpnLeer.name === 'VPN 192.168.5.5' && vpnFremd.name === 'VPN 192.168.5.9' && gE.von('192.168.5.3').name === 'Arbeitslaptop',
+        JSON.stringify([vpnLaptop.name, vpnRouter.name, vpnLeer.name, vpnFremd.name])); }
     pruefe('Geräte: ohne Namen → Hersteller bzw. „private MAC“', clientName({ mac: '94:be:46:00:00:01', oui: 'Apple' }) === 'Gerät von Apple' && clientName({ mac: '9a:00:00:00:00:31' }) === 'Gerät mit privater MAC' && clientName({ mac: '52:54:00:00:00:9d' }) === 'Gerät mit privater MAC' && clientName({ mac: '94:be:46:00:00:01' }) === '' && clientName({ mac: 'x', hostname: ' pc ' }) === 'pc');
     pruefe('Geräte: Namen auch für bekannte Offline-Geräte (UniFi rest/user), Online-Name bleibt', g.nameVon('cc:cc:cc:cc:cc:01') === 'Gast Smartphone ALT' && g.nameVon('52:54:00:00:00:9d') === 'Gerät mit privater MAC' && g.nameVon('ip:192.168.1.5') === '' && g.iconVon(MAC61) === 1681 && g.iconVon(MAC60) === null && g.nameVon(MAC60) === 'Switch' && g.status().unifi.geraete === 2);
     g.von('192.168.1.99'); const r1 = rufeG; uhrG += 16000; g.von('192.168.1.99'); await g.laeuft; const r2 = rufeG; uhrG += 16000; g.von('192.168.1.99'); const r3 = rufeG;
@@ -1108,7 +1114,7 @@ try {
         (weg.flags & 15) === 2 && !logW.some((x) => /juuuport/.test(x.domain)) && (bvEdns.flags & 15) === 2 && (bvOhne.flags & 15) === 2 && !logB.some((x) => /juuuport/.test(x.domain)) && logB.some((x) => x.aktion === 'fehler' && x.domain === 'seite.de'),
         JSON.stringify({ weg: weg.flags & 15, logW: logW.map((x) => x.domain), bvEdns: bvEdns.flags & 15, bvOhne: bvOhne.flags & 15, logB: logB.map((x) => [x.domain, x.aktion]) }));
     }
-    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && prof.buf.toString().includes('<key>PayloadScope</key><string>System</string>') && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
+    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && prof.buf.toString().includes('<key>PayloadScope</key><string>System</string>') && !prof.buf.toString().includes('ProhibitDisablement') && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
     if (mitOpenssl) {
       unt.speichereZertifikat(hostU, { schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8'), kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), bis: Date.now() + 80 * 86400000 });
       unt.dotPruefen(); await new Promise((r) => setTimeout(r, 200));

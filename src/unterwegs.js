@@ -359,7 +359,9 @@ class Unterwegs {
     res.end(antwort);
   }
   /** iOS/iPadOS/macOS-Profil: DNS-over-HTTPS über den Gerätenamen, immer an (auch im WLAN). PayloadScope System: macOS installiert DNS-Einstellungen
-   *  nur systemweit („profile must be scoped to system“ → „VPN-Dienst konnte nicht installiert werden“, 25.11.2026); iOS ignoriert den Schlüssel. */
+   *  nur systemweit („profile must be scoped to system“ → „VPN-Dienst konnte nicht installiert werden“, 25.11.2026); iOS ignoriert den Schlüssel.
+   *  KEIN ProhibitDisablement: iOS lehnt den Wert auf nicht zentral verwalteten Geräten ab („Das Feld ‚ProhibitDisablement‘ enthält einen
+   *  ungültigen Wert“, 25.11.2026) – das Profil ließ sich dort nie installieren. */
   profil(gid) {
     const g = this.u.geraete[gid], host = this.hostVon(gid);
     if (!g || !host) return null;
@@ -383,7 +385,6 @@ class Unterwegs {
       <key>PayloadType</key><string>com.apple.dnsSettings.managed</string>
       <key>PayloadUUID</key><string>${uuidAus(`dns|${g.geheim}`)}</string>
       <key>PayloadVersion</key><integer>1</integer>
-      <key>ProhibitDisablement</key><true/>
     </dict>
   </array>
   <key>PayloadDescription</key><string>Filtert Werbung und schützt ${xml(name)} auch unterwegs im Mobilfunk – mit dem Profil dieses Geräts in FAH-Adblock.</string>

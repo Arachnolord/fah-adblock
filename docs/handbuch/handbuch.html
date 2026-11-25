@@ -92,7 +92,7 @@
     <h2>Handbuch</h2>
     <p>Einrichtung, Bedienung und jede Einstellung erklärt – inklusive der DNS-Einrichtung in UniFi.</p>
   </div>
-  <div class="fuss">Version 2026.11.25-3 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
+  <div class="fuss">Version 2026.11.25-4 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
 </section>
 
 <!-- ─────────────────────────── Inhalt ─────────────────────────── -->
@@ -383,7 +383,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
 <section class="kapitel">
   <h2><span class="nr">6</span>Geräte und Rettung</h2>
   <figure><img src="bilder/06-geraete.jpg" alt="Geräte" style="max-height:62mm"><figcaption>Gerätekarte mit Symbol, Zahlen und Verlauf der letzten 12 Stunden</figcaption></figure>
-  <p>Jedes Gerät, das FAH-Adblock nutzt, bekommt eine Karte. Name und <b>Gerätesymbol</b> liefert UniFi – auch für Geräte, die gerade offline sind. Die Symbole lädt FAH-Adblock einmal von Ubiquiti und speichert sie auf dem NAS; gibt es keins, erscheint ein passendes Emoji. Hat ein Gerät dort keinen Namen, steht der Hersteller da („Gerät von …“) oder „Gerät mit privater MAC“ (zufällige MAC-Adresse von Handys oder virtuelle Maschinen); mit ✎ lässt sich ein eigener Name vergeben. Geräte, die mit einem Profil eingetragen sind, aber noch nicht gefragt haben, erscheinen mit „nie“. Profile hängen an der MAC-Adresse und bleiben erhalten, wenn ein Gerät eine neue IP bekommt.</p>
+  <p>Jedes Gerät, das FAH-Adblock nutzt, bekommt eine Karte. Name und <b>Gerätesymbol</b> liefert UniFi – auch für Geräte, die gerade offline sind. Die Symbole lädt FAH-Adblock einmal von Ubiquiti und speichert sie auf dem NAS; gibt es keins, erscheint ein passendes Emoji. Hat ein Gerät dort keinen Namen, steht der Hersteller da („Gerät von …“) oder „Gerät mit privater MAC“ (zufällige MAC-Adresse von Handys oder virtuelle Maschinen); mit ✎ lässt sich ein eigener Name vergeben. Geräte, die mit einem Profil eingetragen sind, aber noch nicht gefragt haben, erscheinen mit „nie“. Profile hängen an der MAC-Adresse und bleiben erhalten, wenn ein Gerät eine neue IP bekommt. Geräte im <b>VPN</b> heißen wie ihr VPN-Zugang in UniFi, mit „· VPN“ dahinter (z. B. „Reiserouter · VPN“) – ein eigener Name geht vor.</p>
   <table>
     <tr><th>Element</th><th>Was es macht</th></tr>
     <tr><td>Zahlen</td><td>Anfragen, geblockte Anfragen und Anteil der letzten 24 h; die Kurve zeigt die letzten 12 h.</td></tr>
@@ -793,6 +793,7 @@ SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
     <tr><td>Rote Leiste „… war beschädigt“</td><td>Beim Start war die Einstellungs- oder Nutzerdatei nicht lesbar. Sie ist unter <code>data/…kaputt-…</code> weggesichert, geladen ist der letzte gesicherte Stand (sonst die Werkseinstellungen – dann eine Sicherung einspielen). Bei der Nutzerdatei ohne Sicherung gilt ein Einmal-Passwort aus <code>./manage.sh logs</code>.</td></tr>
     <tr><td>Ersatz meldet „alte Kopplung“</td><td>Haupt und Ersatz haben verschiedene Versionen – beide auf denselben Stand bringen.</td></tr>
     <tr><td>Mac: „VPN-Dienst konnte nicht installiert werden“</td><td>Profil aus einer Version vor 2026.11.25-2 – in <i>📱 Unterwegs</i> neu laden und erneut installieren (macOS will DNS-Profile für den ganzen Mac).</td></tr>
+    <tr><td>iPhone/iPad: „Das Feld ‚ProhibitDisablement‘ enthält einen ungültigen Wert“</td><td>Profil aus einer Version vor 2026.11.25-4 – in <i>📱 Unterwegs</i> mit „🍏 Apple“ neu laden und installieren.</td></tr>
     <tr><td>Kind kommt abends nicht in WhatsApp</td><td>Ruhezeit Messenger im Profil (Kinder ab Werk 21:00–06:30) – im Protokoll steht „Ruhezeit“.</td></tr>
   </table>
 </section>
