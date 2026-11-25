@@ -67,29 +67,37 @@ const rcode = (buf) => {
   try { const opt = eintraege(buf).find((e) => e.typ === TYP_OPT && e.abschnitt === 'ar'); return opt ? tief | ((opt.ttl >>> 24) << 4) : tief; } catch (e) { return tief; }
 };
 
-// Ist `antwort` eine vollständige, heile, ungekürzte Antwort (QR=1, TC=0) auf genau die Frage(n) von `anfrage`? Frage-Abschnitt ab Byte 12,
-// dort nie komprimiert (davor gibt es keinen Namen): Labellängen, Typ und Klasse byte-gleich, nur Buchstaben IN den Labels
-// ohne Groß/Klein. Danach müssen alle angekündigten Einträge vollständig vorhanden sein und das Paket genau dort enden. Sonst false.
-function passtZu(anfrage, antwort) {
+// Gleiche Frage-Abschnitte? Ab Byte 12, dort nie komprimiert (davor gibt es keinen Namen): Labellängen, Typ und Klasse byte-gleich,
+// nur Buchstaben IN den Labels ohne Groß/Klein → Ende des Abschnitts, sonst -1
+function frageGleich(a, b) {
   try {
-    const a = kopf(anfrage), b = kopf(antwort);
-    if (!(b.flags & 0x8000) || (b.flags & 0x0200) || a.qd !== b.qd) return false;   // QR fehlt oder TC gesetzt (über DoH nie gekürzt)
+    const qd = kopf(a).qd; if (kopf(b).qd !== qd) return -1;
     const klein = (x) => (x >= 65 && x <= 90 ? x + 32 : x);
     let pos = 12;
-    for (let q = 0; q < a.qd; q++) {
+    for (let q = 0; q < qd; q++) {
       for (;;) {
-        if (pos >= anfrage.length || pos >= antwort.length) return false;
-        const l = anfrage[pos];
-        if (antwort[pos] !== l || l > 63) return false;          // gleiche Länge, keine Zeiger/Sondertypen in der Frage
+        if (pos >= a.length || pos >= b.length) return -1;
+        const l = a[pos];
+        if (b[pos] !== l || l > 63) return -1;          // gleiche Länge, keine Zeiger/Sondertypen in der Frage
         if (l === 0) { pos++; break; }
-        if (pos + 1 + l > anfrage.length || pos + 1 + l > antwort.length) return false;
-        for (let i = pos + 1; i <= pos + l; i++) if (klein(anfrage[i]) !== klein(antwort[i])) return false;
+        if (pos + 1 + l > a.length || pos + 1 + l > b.length) return -1;
+        for (let i = pos + 1; i <= pos + l; i++) if (klein(a[i]) !== klein(b[i])) return -1;
         pos += 1 + l;
       }
-      if (pos + 4 > anfrage.length || pos + 4 > antwort.length) return false;
-      for (let i = pos; i < pos + 4; i++) if (anfrage[i] !== antwort[i]) return false;   // Typ + Klasse genau
+      if (pos + 4 > a.length || pos + 4 > b.length) return -1;
+      for (let i = pos; i < pos + 4; i++) if (a[i] !== b[i]) return -1;   // Typ + Klasse genau
       pos += 4;
     }
+    return pos;
+  } catch (e) { return -1; }
+}
+// Ist `antwort` eine vollständige, heile, ungekürzte Antwort (QR=1, TC=0) auf genau die Frage(n) von `anfrage`? Alle angekündigten Einträge
+// müssen vollständig vorhanden sein und das Paket genau dort enden. Sonst false.
+function passtZu(anfrage, antwort) {
+  try {
+    const b = kopf(antwort);
+    if (!(b.flags & 0x8000) || (b.flags & 0x0200)) return false;   // QR fehlt oder TC gesetzt (über DoH nie gekürzt)
+    const pos = frageGleich(anfrage, antwort); if (pos < 0) return false;
     const liste = eintraege(antwort);                             // wirft bei abgeschnittenen Einträgen
     return (liste.length ? liste[liste.length - 1].ende : pos) === antwort.length;   // nichts fehlt, nichts hängt hinten dran
   } catch (e) { return false; }
@@ -115,10 +123,13 @@ function cnameZiele(buf) {
 // Für den Client: Kopie mit dessen ID, TTLs um das Alter verringert, OPT entfernt, wenn der Client kein EDNS
 // sprach (und OPT der letzte Eintrag ist), bei UDP über der Grenze → nur Kopf + Frage mit TC-Bit.
 // maxTtl > 0: TTLs höchstens so lang (Zeitlimit – das Gerät soll bald wieder fragen)
-function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true, maxTtl = 0 } = {}) {
+function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true, maxTtl = 0, frage = null } = {}) {
   let buf = Buffer.from(antwort);
   const liste = eintraege(buf);   // wirft bei kaputten Paketen
   buf.writeUInt16BE(id, 0);
+  // Frage in der Schreibweise des Clients zurück (25.11.2026, K16): Antworten aus dem Zwischenspeicher trugen sonst die des ersten Fragers –
+  // Resolver mit 0x20-Prüfung (zufällige Groß/Klein-Schreibung als Schutz) verwerfen das. Nur bei gleicher Länge und gleicher Frage ohne Groß/Klein.
+  if (frage) { const ende = frageGleich(frage, buf); if (ende > 12) frage.copy(buf, 12, 12, ende); }
   if (alterSek > 0 || maxTtl > 0) for (const e of liste) if (e.typ !== TYP_OPT) { let t = Math.max(0, e.ttl - alterSek); if (maxTtl > 0) t = Math.min(t, maxTtl); buf.writeUInt32BE(t, e.ttlOffset); }
   if (!edns) {
     const opt = liste.find((e) => e.typ === TYP_OPT);
@@ -126,9 +137,12 @@ function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true, maxTtl
   }
   const grenze = edns ? Math.min(Math.max(512, edns.udpGroesse || 512), 1232) : 512;
   if (udp && buf.length > grenze) {
-    const ende = frageEnde(buf), gekuerzt = Buffer.from(buf.subarray(0, ende));
+    const ende = frageEnde(buf);
+    // Sprach der Client EDNS, gehört auch in die gekürzte Antwort ein OPT (RFC 6891 §7, K16) – sonst schalten manche Stubs EDNS ab
+    const opt = edns ? Buffer.from([0, 0, 41, 1232 >> 8, 1232 & 255, 0, 0, edns.do ? 0x80 : 0, 0, 0, 0]) : Buffer.alloc(0);
+    const gekuerzt = Buffer.concat([buf.subarray(0, ende), opt]);
     gekuerzt.writeUInt16BE(buf.readUInt16BE(2) | 0x0200, 2);   // TC
-    gekuerzt.writeUInt16BE(0, 6); gekuerzt.writeUInt16BE(0, 8); gekuerzt.writeUInt16BE(0, 10);
+    gekuerzt.writeUInt16BE(0, 6); gekuerzt.writeUInt16BE(0, 8); gekuerzt.writeUInt16BE(edns ? 1 : 0, 10);
     return gekuerzt;
   }
   return buf;

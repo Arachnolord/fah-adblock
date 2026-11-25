@@ -309,3 +309,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--akzent);box-shadow:0 
 .meldegruppe>summary .haupt small{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meldegruppe[open]>summary{background:rgba(127,127,127,.06)}
 .meldegruppe>.zeilen>.zeile{padding-left:34px;border-bottom:0;border-top:1px dashed var(--rand)}
+.warnleiste{max-width:calc(1500px - 2 * max(16px,3vw));margin:14px auto 0;width:calc(100% - 2 * max(16px,3vw));box-sizing:border-box;padding:10px 14px;border-radius:12px;border:1px solid var(--block);background:color-mix(in srgb,var(--block) 12%,var(--karte));color:var(--text);font-size:13px;line-height:1.45}
+.warnleiste div+div{margin-top:6px}
+@media (max-width:720px){.warnleiste{width:calc(100% - 28px)}}

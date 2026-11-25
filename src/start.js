@@ -18,7 +18,7 @@ const { Records } = require('./dns/records');
 const { Geraete } = require('./geraete');
 const { Protokoll } = require('./protokoll');
 const { Auth } = require('./auth');
-const { webServer, kompakt } = require('./web/server');
+const { webServer, kompakt, liveSenden } = require('./web/server');
 const { netzliste } = require('./netz');
 const { setzeServer } = require('./aufloeser');
 const { Spiegel } = require('./spiegel');
@@ -91,7 +91,7 @@ async function main() {
     const x = w();
     const alteListen = JSON.stringify(listen.quellen.map((q) => [q.id, q.an, q.url]));
     listen.konfigurieren(x.listen);
-    if (JSON.stringify(listen.quellen.map((q) => [q.id, q.an, q.url])) !== alteListen) listen.neuAufbauen();
+    if (JSON.stringify(listen.quellen.map((q) => [q.id, q.an, q.url])) !== alteListen) listen.neuAufbauenSanft().catch((e) => console.error('[listen] Neuaufbau:', e.message));
     filter.konfigurieren({ regeln: x.regeln, profile: x.profile, listen: x.listen, geraete: x.geraete, pausen: x.pausen, dienste: x.dienste || {} });
     if (JSON.stringify(upstream.anbieter.map((a) => [a.name, a.url])) !== JSON.stringify(x.upstream.map((a) => [a.name, a.url]))) { upstream.konfigurieren(x.upstream); upstream.leeren(); }
     lokal.konfigurieren({ gateway: x.dns.gateway, zonen: x.dns.lokaleZonen });
@@ -113,7 +113,7 @@ async function main() {
     const teil = stapel.length > 120 ? stapel.slice(-120) : stapel, extra = stapel.length - teil.length;
     const text = `event: anfragen\ndata: ${JSON.stringify({ e: teil.map(kompakt), extra })}\n\n`;
     stapel = [];
-    for (const res of live) res.write(text);
+    liveSenden(live, text);
   }, 300).unref();
 
   // Ereignisschleife beobachten (Diagnose unter Last)
@@ -130,9 +130,10 @@ async function main() {
   // Ersatz → Haupt (beim Abgleich): Meldungen und Zeitkonto-Nutzung hin, aufgebrauchte Zeitlimits zurück
   const austausch = {
     sammeln: () => ({ meldungen: meldungen.abholen(), nutzung: zeitkonto.abholen(), unterwegsHash: unterwegs.paketHash, unterwegsSchluessel: unterwegs.ersatzSchluessel() }),
-    zurueck: (d) => { meldungen.ausgang.unshift(...(d.meldungen?.ereignisse || []).slice(0, 500 - meldungen.ausgang.length)); for (const [gid, z] of Object.entries(d.nutzung || {})) for (const [ziel, ms] of Object.entries(z)) { const x = (zeitkonto.delta[gid] ||= {}); x[ziel] = (x[ziel] || 0) + ms; } },
-    uebernehmen: (a, code) => { zeitkonto.uebernehmenFremd(a?.aufgebraucht); try { unterwegs.paketUebernehmen(a?.unterwegs, code); } catch (e) { console.warn('[unterwegs] Übergabe vom Haupt:', e.message); } },
-    empfangen: (d, code) => { meldungen.empfangen(d.meldungen || {}); zeitkonto.hinzufuegen(d.nutzung); return { aufgebraucht: zeitkonto.aufgebrauchtAlle((gid) => filter.profilVon(gid)), unterwegs: code ? unterwegs.paketFuerErsatz(code, d.unterwegsHash, typeof d.unterwegsSchluessel === 'string' && d.unterwegsSchluessel.length < 200 ? d.unterwegsSchluessel : null) : null }; },
+    // Zeitkonto-Pakete bleiben bis zur Bestätigung im Zeitkonto ausstehend (K11) – hier nur die Meldungen zurücklegen
+    zurueck: (d) => { meldungen.ausgang.unshift(...(d.meldungen?.ereignisse || []).slice(0, 500 - meldungen.ausgang.length)); },
+    uebernehmen: (a, code) => { zeitkonto.bestaetigen(a?.nutzungBestaetigt); zeitkonto.uebernehmenFremd(a?.aufgebraucht); try { unterwegs.paketUebernehmen(a?.unterwegs, code); } catch (e) { console.warn('[unterwegs] Übergabe vom Haupt:', e.message); } },
+    empfangen: (d, code) => { meldungen.empfangen(d.meldungen || {}); const nutzungBestaetigt = zeitkonto.annehmen(d.nutzung); return { nutzungBestaetigt, aufgebraucht: zeitkonto.aufgebrauchtAlle((gid) => filter.profilVon(gid)), unterwegs: code ? unterwegs.paketFuerErsatz(code, d.unterwegsHash, typeof d.unterwegsSchluessel === 'string' && d.unterwegsSchluessel.length < 200 ? d.unterwegsSchluessel : null) : null }; },
   };
   spiegel = new Spiegel({ verzeichnis: DATEN, einst, geheimnis: GEHEIM, version: VERSION, eigeneUrl, austausch, anwenden: () => { throw new Error('Weboberfläche noch nicht bereit'); } });
   // Optionale Erweiterungen (src/erweiterungen/<name>/) – fehlen sie, läuft alles wie gehabt

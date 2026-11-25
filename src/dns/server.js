@@ -174,9 +174,11 @@ class DnsServer extends EventEmitter {
     let maxTtl = 0;
     if (this.zeitkonto && e.grund !== 'Pause' && !fehlerOben) {
       const profil = this.filter.profilVon(geraet.id), dienst = profil.limits ? this.filter.dienstVon(f.name) : null;
-      const ziele = dienst ? this.filter.limitZiele(profil, dienst) : [];
+      const ziele = dienst ? this.filter.limitZiele(profil, dienst, f.name) : [];
       if (ziele.length) { this.zeitkonto.vermerke(geraet.id, ziele, basis.ts); maxTtl = 60; }
     }
+    // Ruhezeit/Zeitplan beginnt bald (K15): Antwort nicht über den Beginn hinaus im Gerät gültig lassen
+    if (e.grund !== 'Pause' && e.grund !== 'Hilfsangebot' && !fehlerOben && this.filter.ttlDeckel) { const deckel = this.filter.ttlDeckel(geraet.id, f.name, basis.ts); if (deckel) maxTtl = maxTtl ? Math.min(maxTtl, deckel) : deckel; }
     // Unterwegs ohne Alterung der TTL: sonst verriete eine sinkende TTL, welche Namen zu Hause gerade aufgerufen wurden
     const antwort = paket.fuerClient(r.buf, anfrage, { alterSek: extern ? 0 : r.alterSek, udp, maxTtl: extern ? (maxTtl || 300) : maxTtl });
     if (!antwort) { this.zaehler.fehler++; return paket.antwort(anfrage, { rcode: 'SERVFAIL' }); }

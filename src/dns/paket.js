@@ -23,7 +23,7 @@ function lesen(buf) {
   const opt = (p.additionals || []).find((r) => r.type === 'OPT');
   return {
     // antwort = QR-Bit gesetzt (eine Antwort, keine Anfrage); fragen = Anzahl im Frage-Abschnitt (gültig ist genau 1)
-    paket: p, id: p.id, ungueltig, antwort: p.type === 'response', opcode: p.opcode, fragen: (p.questions || []).length, frage: q ? { name: String(q.name || '').toLowerCase().replace(/\.$/, ''), typ: q.type, klasse: q.class } : null,
+    paket: p, roh: buf, id: p.id, ungueltig, antwort: p.type === 'response', opcode: p.opcode, fragen: (p.questions || []).length, frage: q ? { name: String(q.name || '').toLowerCase().replace(/\.$/, ''), typ: q.type, klasse: q.class } : null,
     flags: p.flags || 0, rd: !!((p.flags || 0) & FLAG_RD), cd: !!((p.flags || 0) & FLAG_CD),
     edns: opt ? { udpGroesse: Math.max(512, opt.udpPayloadSize || 512), do: !!(opt.flags & 0x8000) } : null,
   };
@@ -56,7 +56,7 @@ function sperrAntwort(anfrage, sperrIp = null) {
 // Upstream-Antwort an den Client anpassen – byte-genau (roh.js): eigene ID, TTLs herabsetzen,
 // bei UDP ggf. kürzen (TC). Kein Dekodieren/Neubauen, damit unbekannte Typen (HTTPS/SVCB …) heil bleiben.
 function fuerClient(antwortBuf, anfrage, { alterSek = 0, udp = true, maxTtl = 0 } = {}) {
-  try { return roh.fuerClient(antwortBuf, { id: anfrage.id, edns: anfrage.edns, alterSek, udp, maxTtl }); } catch (e) { return null; }
+  try { return roh.fuerClient(antwortBuf, { id: anfrage.id, edns: anfrage.edns, alterSek, udp, maxTtl, frage: anfrage.roh }); } catch (e) { return null; }
 }
 
 // Kleinste TTL einer Antwort (für den Zwischenspeicher); negative Antworten: SOA-Minimum

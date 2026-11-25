@@ -19,7 +19,7 @@ const require = createRequire(import.meta.url);
 process.env.TZ = 'Europe/Berlin';
 const { netzliste, normIp, normDomain } = require('../src/netz.js');
 const { Listen, parse } = require('../src/dns/listen.js');
-const { Filter, zeitplanAktiv, musterLesen } = require('../src/dns/filter.js');
+const { Filter, zeitplanAktiv, sekundenBisStart, musterLesen } = require('../src/dns/filter.js');
 const paket = require('../src/dns/paket.js');
 const { Upstream, DohAnbieter, Lokal } = require('../src/dns/upstream.js');
 const { DnsServer } = require('../src/dns/server.js');
@@ -28,7 +28,7 @@ const { Protokoll } = require('../src/protokoll.js');
 const { Geraete, clientName } = require('../src/geraete.js');
 const { Auth } = require('../src/auth.js');
 const { Einstellungen, bereinigen, vorgaben, verschluesseln, entschluesseln } = require('../src/einstellungen.js');
-const { webServer } = require('../src/web/server.js');
+const { webServer, liveSenden } = require('../src/web/server.js');
 const { Spiegel } = require('../src/spiegel.js');
 const { Benachrichtigung, pushVerschluesseln, vapidKopf, endpunktOk } = require('../src/benachrichtigung.js');
 const { Meldungen } = require('../src/meldungen.js');
@@ -73,6 +73,15 @@ try {
   const basis = { profile, listen: QUELLEN, geraete: { kind: { profil: 'kinder' } }, pausen: { global: 0, geraete: {} } };
   filter.konfigurieren({ ...basis, regeln: [] });
   pruefe('Filter: Werbung geblockt (Standard), Social erlaubt, unbekanntes Gerät = Standard', filter.entscheide({ geraetId: 'x', name: 'ads.example.com' }).aktion === 'geblockt' && filter.entscheide({ geraetId: 'x', name: 'facebook.com' }).aktion === 'erlaubt');
+  {
+    // 25.11.2026 (K15): TTL-Deckel vor einem Sperrfenster – Kinder-Profil sperrt Social 20:00–07:00 (Liste „s“)
+    const tag = (h, m) => Date.UTC(2026, 8, 16, h - 2, m);   // Mi in Berlin (Sommerzeit, UTC+2)
+    const vorher = filter.ttlDeckel('kind', 'www.facebook.com', tag(19, 55)), mittags = filter.ttlDeckel('kind', 'www.facebook.com', tag(12, 0)), standard = filter.ttlDeckel('x', 'www.facebook.com', tag(19, 55)), ungelistet = filter.ttlDeckel('kind', 'seite.de', tag(19, 55));
+    const woche = sekundenBisStart([{ tage: [1], von: '01:00', bis: '02:00' }], Date.UTC(2026, 8, 20, 21, 0), 'Europe/Berlin');   // So 23:00 → Mo 01:00
+    const ganzTag = sekundenBisStart([{ tage: [4], von: '00:00', bis: '00:00' }], tag(23, 0), 'Europe/Berlin');                // Mi 23:00 → Do 00:00
+    pruefe('TTL-Deckel (K15): erlaubte Social-Antwort 5 min vor Sperrbeginn höchstens 300 s, mittags bis zum Abend; ohne Zeitplan/ungelistet kein Deckel; Fenster über Wochenwechsel und ganztägig',
+      vorher === 300 && mittags === 8 * 3600 && standard === 0 && ungelistet === 0 && woche === 7200 && ganzTag === 3600, JSON.stringify({ vorher, mittags, standard, ungelistet, woche, ganzTag }));
+  }
   pruefe('Sperrseite: Kinder-Sperre zählt, unbekannte Domain nicht', !!filter.sperrgrund('facebook.com') && filter.sperrgrund('harmlos-unbekannt.example') === null);
   pruefe('Filter: Kinder-Profil sperrt Social um 20:30', filter.entscheide({ geraetId: 'kind', name: 'facebook.com' }).aktion === 'geblockt');
   jetzt = Date.UTC(2026, 8, 17, 4, 30);      // Do 06:30 – Fenster vom Vortag läuft noch
@@ -173,12 +182,24 @@ try {
     fD.konfigurieren({ ...basisD, regeln: [], dienste: { netflix: { modus: 'listen' }, tiktok: { modus: 'frei' } } });
     pruefe('Dienste-Zustände: „nach Listen“ lässt die Blockliste wieder greifen, „geschützt“ hebt auch Social-Media-Sperren im Kinder-Profil auf',
       fD.entscheide({ name: 'ichnaea.netflix.com' }).aktion === 'geblockt' && fD.entscheide({ geraetId: 'kind', name: 'www.tiktok.com' }).grund === 'Geschützter Dienst');
+    {
+      // 25.11.2026 (K5): „nur für Profil Kinder sperren“ lässt alle anderen beim bisherigen Grundzustand (Netflix = geschützt), nicht „nach Listen“
+      fD.konfigurieren({ ...basisD, regeln: [], dienste: { netflix: { modus: 'sperren', geltung: 'profil:kinder' } } });
+      const kind = fD.entscheide({ geraetId: 'kind', name: 'ichnaea.netflix.com' }), papa = fD.entscheide({ geraetId: 'papa', name: 'ichnaea.netflix.com' });
+      fD.konfigurieren({ ...basisD, regeln: [], dienste: { netflix: { modus: 'sperren', geltung: 'profil:kinder', grund: 'listen' } } });
+      const papaListen = fD.entscheide({ geraetId: 'papa', name: 'ichnaea.netflix.com' });
+      pruefe('Dienst nur für ein Profil gesperrt (K5): Kind gesperrt, alle anderen behalten den Grundzustand (Vorgabe geschützt bzw. gemerkt „nach Listen“)',
+        kind.grund === 'Dienst gesperrt' && papa.grund === 'Geschützter Dienst' && papaListen.aktion === 'geblockt' && papaListen.grund === 'Liste', JSON.stringify({ kind: kind.grund, papa: papa.grund, papaListen: papaListen.grund }));
+    }
     const profileAusnahme = [profileD[0], { ...profileD[1], dienste: { tiktok: 'sperren', whatsapp: 'frei' } }];
     fD.konfigurieren({ ...basisD, profile: profileAusnahme, regeln: [], dienste: { tiktok: { modus: 'frei' } } });
     pruefe('Profil-Ausnahmen je Dienst: im Kinder-Profil TikTok gesperrt (trotz global geschützt), WhatsApp erlaubt; andere Profile unberührt',
       fD.entscheide({ geraetId: 'kind', name: 'www.tiktok.com' }).grund === 'Dienst gesperrt' && fD.entscheide({ geraetId: 'kind', name: 'web.whatsapp.com' }).grund === 'Geschützter Dienst'
       && fD.entscheide({ geraetId: 'papa', name: 'www.tiktok.com' }).grund === 'Geschützter Dienst');
     fD.konfigurieren({ ...basisD, regeln: [], dienste: { teams: { modus: 'frei' } } });
+    { const teams = require('../src/dienste.js').DIENSTE.find((x) => x.id === 'teams'), prof = { limits: { 'rubrik:messenger': 60, 'dienst:teams': 30 } };
+      pruefe('Zeitkonto (K6): mitbenutzte Domains (giphy bei Teams) zählen nicht ins Zeitlimit, echte Teams-Namen schon',
+        fD.limitZiele(prof, teams, 'media.giphy.com').length === 0 && fD.limitZiele(prof, teams, 'teams.microsoft.com').length === 2 && fD.istMitbenutzt(teams, 'media1.giphy.com') && !fD.istMitbenutzt(teams, 'teams.microsoft.com')); }
     pruefe('Microsoft Teams geschützt: ALLE Teams-Dienste bleiben trotz Sperrliste frei – Anruf-Infrastruktur (früher Skype), Trouter, Relay, Konfiguration, Diagnosekanal, GIFs, direkt abgefragte Zwischennamen',
       TEAMS_NOETIG.every((name) => fD.entscheide({ name }).dienst === 'teams' && fD.entscheide({ name }).grund === 'Geschützter Dienst'), TEAMS_NOETIG.filter((name) => fD.entscheide({ name }).dienst !== 'teams').join(' '));
     pruefe('Microsoft Teams geschützt: fremde Microsoft-Telemetrie, Bing- und Giphy-Werbung bleiben geblockt; Office-Diagnose gehört zu Microsoft 365 (dort „nach Listen“)',
@@ -234,7 +255,8 @@ try {
     // 25.11.2026 (K13): scheitert das Speichern (volle Platte), wirft aendern und der Stand im Speicher bleibt unverändert (vorher schon übernommen,
     // ein erneuter Versuch kam nie, nach einem Neustart war der alte Stand wieder da); Beobachter werden dann nicht benachrichtigt
     let gemeldet = 0; e2.beobachten(() => gemeldet++);
-    const vorher = e2.werte.regeln.length, datei = e2.datei; e2.datei = path.join(tmp, 'gibt-es-nicht', 'x', 'einstellungen.json');
+    const keinOrdner = path.join(tmp, 'ist-eine-datei'); fs.writeFileSync(keinOrdner, 'x');
+    const vorher = e2.werte.regeln.length, datei = e2.datei; e2.datei = path.join(keinOrdner, 'einstellungen.json');   // Elternpfad ist eine Datei → Schreiben scheitert
     let geworfen = false; try { e2.aendern((w) => { w.regeln.push({ id: 'neu', typ: 'sperren', muster: 'x.de' }); }); } catch (e) { geworfen = true; }
     const unveraendert = e2.werte.regeln.length === vorher && gemeldet === 0;
     e2.datei = datei; e2.aendern((w) => { w.regeln.push({ id: 'neu', typ: 'sperren', muster: 'x.de' }); });
@@ -252,9 +274,17 @@ try {
       !fehler && startbar && wk.listen.every((l) => l && typeof l.id === 'string') && wk.listen.some((l) => l.id === 'eigen-1') && wk.profile.map((p) => p.id).join() === 'standard,kinder' && wk.regeln.length === 1 && !('a' in wk.geraete) && wk.geraete.b.profil === 'kinder' && Object.keys(wk.dienste).length === 0
       && wk.pausen.global === 0 && wk.pausen.geraete.b === 5 && !('a' in wk.pausen.geraete) && wk.dns.erlaubteNetze.join() === '10.0.0.0/8' && wk.dns.gateway === '192.168.1.1' && wk.dns.lokaleZonen.length > 0 && wk.upstream.length === 3 && wk.upstream[0].name === 'Quad9'
       && wk.protokoll.tage === 7 && wk.web.vertrauteProxies.join() === '172.16.0.0/12' && meldungen.length >= 6, fehler || JSON.stringify({ meldungen, wk }));
+    // 25.11.2026 (K7): kaputte Datei wird weggesichert (nie überschrieben), der letzte gute Stand (.bak) gilt – nur ohne Sicherung die Vorgaben
+    const altErr = console.error; console.error = () => {};
     fs.writeFileSync(path.join(ek, 'einstellungen.json'), '[1,2]');
-    let wk2 = null; try { console.warn = () => {}; wk2 = new Einstellungen({ verzeichnis: ek, geheimnis: 'z'.repeat(20), env: {} }).laden().werte; } catch (e) {} finally { console.warn = alt; }
-    pruefe('Einstellungen: Datei mit falschem Grundtyp → Vorgaben', !!wk2 && wk2.upstream.length === 3 && wk2.profile.length === 3);
+    let e3 = null; try { console.warn = () => {}; e3 = new Einstellungen({ verzeichnis: ek, geheimnis: 'z'.repeat(20), env: {} }).laden(); } catch (e) {} finally { console.warn = alt; }
+    const kaputt1 = fs.readdirSync(ek).filter((x) => x.startsWith('einstellungen.json.kaputt-'));
+    fs.rmSync(path.join(ek, 'einstellungen.json.bak')); fs.writeFileSync(path.join(ek, 'einstellungen.json'), '{ kaputt');
+    let e4 = null; try { console.warn = () => {}; e4 = new Einstellungen({ verzeichnis: ek, geheimnis: 'z'.repeat(20), env: {} }).laden(); } catch (e) {} finally { console.warn = alt; console.error = altErr; }
+    const kaputt2 = fs.readdirSync(ek).filter((x) => x.startsWith('einstellungen.json.kaputt-'));
+    pruefe('Einstellungen: kaputte Datei → weggesichert, letzter guter Stand (.bak) geladen + Warnung; ohne Sicherung Vorgaben + Warnung; nie still überschrieben',
+      e3 && e3.werte.dns.erlaubteNetze.join() === '10.0.0.0/8' && /letzte gesicherte Stand/.test(e3.warnung || '') && kaputt1.length === 1 && fs.readFileSync(path.join(ek, kaputt1[0]), 'utf8') === '[1,2]'
+      && e4 && e4.werte.upstream.length === 3 && e4.werte.profile.length === 3 && /Werkseinstellungen/.test(e4.warnung || '') && kaputt2.length === 2, JSON.stringify({ w3: e3?.warnung, w4: e4?.warnung, kaputt2 }));
     {
       // Werksvorgabe (Betreiber 21.09.2026): Quad9 → Cloudflare → DNS.SB. Kein voreingestellter Anbieter darf selbst Werbung/Tracker oder Jugendschutz filtern –
       // ein filternder Anbieter sperrte unbemerkt Teams-Adressen (FAH-Adblock filtert selbst, ein zweiter Filter macht Fehler unsichtbar)
@@ -276,6 +306,19 @@ try {
   const ohneEdns = paket.lesen(frage('gross.de', 'TXT', { edns: false }));
   const gekuerzt = dnsPacket.decode(paket.fuerClient(gross, ohneEdns, { udp: true })), tcp = dnsPacket.decode(paket.fuerClient(gross, ohneEdns, { udp: false }));
   pruefe('Große Antwort: über UDP gekürzt mit TC-Bit, über TCP vollständig', (gekuerzt.flags & (1 << 9)) && gekuerzt.answers.length === 0 && tcp.answers.length === 30 && gekuerzt.id === 4711);
+  {
+    // 25.11.2026 (K16): gekürzte Antwort an einen EDNS-Client behält ein OPT (DO wie beim Client); Frage in der Schreibweise des Clients (0x20)
+    const groesser = dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: [{ type: 'TXT', name: 'gross.de' }], answers: Array.from({ length: 40 }, (_, i) => ({ type: 'TXT', name: 'gross.de', ttl: 300, data: ['x'.repeat(60) + i] })) });
+    const mitEdns = paket.lesen(dnsPacket.encode({ type: 'query', id: 5, flags: dnsPacket.RECURSION_DESIRED, questions: [{ type: 'TXT', name: 'gross.de' }], additionals: [{ type: 'OPT', name: '.', udpPayloadSize: 1232, flags: 0x8000, options: [] }] }));
+    const tcE = dnsPacket.decode(paket.fuerClient(groesser, mitEdns, { udp: true })), tcOhne = dnsPacket.decode(paket.fuerClient(groesser, ohneEdns, { udp: true }));
+    const optE = tcE.additionals.find((x) => x.type === 'OPT');
+    const gemischt = paket.lesen(dnsPacket.encode({ type: 'query', id: 6, flags: dnsPacket.RECURSION_DESIRED, questions: [{ type: 'A', name: 'WwW.ExAmPlE.CoM' }] }));
+    const ausSpeicher = dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: [{ type: 'A', name: 'www.example.com' }], answers: [{ type: 'A', name: 'www.example.com', ttl: 60, data: '1.2.3.4' }] });
+    const zurueck = dnsPacket.decode(paket.fuerClient(ausSpeicher, gemischt, {})), fremd = dnsPacket.decode(paket.fuerClient(ausSpeicher, paket.lesen(frage('anders.example')), {}));
+    pruefe('K16: gekürzte UDP-Antwort an EDNS-Client mit OPT (DO übernommen, 1232), ohne EDNS ohne OPT; Frage in Schreibweise des Clients, fremde Frage unverändert',
+      (tcE.flags & (1 << 9)) && optE && optE.udpPayloadSize === 1232 && (optE.flags & 0x8000) && tcE.additionals.length === 1 && (tcOhne.flags & (1 << 9)) && tcOhne.additionals.length === 0
+      && zurueck.questions[0].name === 'WwW.ExAmPlE.CoM' && zurueck.answers[0].data === '1.2.3.4' && fremd.questions[0].name === 'www.example.com', JSON.stringify({ optE, q: zurueck.questions[0].name }));
+  }
   const mitTtl = dnsPacket.encode({ type: 'response', id: 0, questions: [{ type: 'A', name: 'x.de' }], answers: [{ type: 'CNAME', name: 'x.de', ttl: 300, data: 'ads.example.com' }, { type: 'A', name: 'ads.example.com', ttl: 120, data: '1.2.3.4' }] });
   pruefe('TTL: kleinste TTL erkannt, beim Ausliefern um das Alter verringert; CNAME-Ziele gelesen', paket.ttlVon(mitTtl) === 120 && dnsPacket.decode(paket.fuerClient(mitTtl, a, { alterSek: 20 })).answers[1].ttl === 100 && paket.cnameZiele(mitTtl).join() === 'ads.example.com');
 
@@ -547,13 +590,39 @@ try {
   const manipuliert = Buffer.from(JSON.stringify({ n: 'admin', b: Date.now() + 1e12 })).toString('base64url');
   pruefe('Anmeldung: manipuliertes Cookie abgelehnt, falsches Passwort abgelehnt', !auth.sitzungLesen(`fah_adblock=${manipuliert}.${sig}`) && !!inhalt && auth.anmelden('admin', 'falsch', '2.2.2.2').fehler);
   for (let i = 0; i < 10; i++) auth.anmelden(`bot${i}`, 'falsch', '3.3.3.3');
+  {
+    // 25.11.2026 (K7): kaputte Nutzerdatei → nie wieder admin/admin. Mit Sicherung gilt der letzte gute Stand; ohne Sicherung Einmal-Passwort im Protokoll
+    const ad = path.join(tmp, 'auth-kaputt'); fs.mkdirSync(ad, { recursive: true });
+    const a1 = new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) }); a1.passwortAendern('admin', 'admin', 'Geheim-12345');
+    const altErr = console.error, logs = []; console.error = (...x) => logs.push(x.join(' '));
+    fs.writeFileSync(path.join(ad, 'nutzer.json'), '{"nutzer": [');
+    const a2 = new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) });
+    const mitSicherung = !!a2.anmelden('admin', 'Geheim-12345', '9.9.9.1').cookie && !a2.anmelden('admin', 'admin', '9.9.9.2').cookie;
+    fs.rmSync(path.join(ad, 'nutzer.json.bak')); fs.writeFileSync(path.join(ad, 'nutzer.json'), 'kaputt');
+    const a3 = new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) }); console.error = altErr;
+    const einmal = (logs.join('\n').match(/Einmal-Passwort: (\S+)/) || [])[1];
+    const standard = a3.anmelden('admin', 'admin', '9.9.9.3');
+    pruefe('Anmeldung: kaputte Nutzerdatei → letzter gesicherter Stand; ohne Sicherung kein admin/admin, sondern Einmal-Passwort aus dem Protokoll (Hinweis bei falscher Anmeldung); kaputte Dateien weggesichert',
+      mitSicherung && !standard.cookie && /Einmal-Passwort/.test(standard.fehler || '') && !!einmal && !!a3.anmelden('admin', einmal, '9.9.9.4').cookie && fs.readdirSync(ad).filter((x) => x.startsWith('nutzer.json.kaputt-')).length === 2,
+      JSON.stringify({ mitSicherung, standard, einmal: !!einmal }));
+  }
   pruefe('Anmeldung: Bremse je Adresse nach 10 Fehlversuchen (auch mit richtigem Passwort)', /Zu viele Versuche/.test(auth.anmelden('admin', 'admin', '3.3.3.3').fehler || ''));
   uhrA += 2 * 3600000;   // Zähler je Name verfällt nach 1 h Ruhe
+  const bekannt = auth.anmelden('admin', 'admin', '5.5.5.8');   // dieser Browser war schon einmal angemeldet → Geräte-Cookie
   for (const ip of ['5.5.5.1', '5.5.5.2']) auth.anmelden('admin', 'falsch', ip);
-  const dritter = auth.anmelden('admin', 'falsch', '5.5.5.3'), gesperrt = auth.anmelden('admin', 'admin', '5.5.5.4');
-  uhrA += 2500; const frei = auth.anmelden('admin', 'admin', '5.5.5.4');
-  pruefe('Anmeldung: Bremse je Nutzername über Adressen hinweg – ab dem 3. Fehlversuch steigende Wartezeit (2 s, 4 s … 15 min), danach wieder frei',
-    /falsch/.test(dritter.fehler) && /diesen Namen/.test(gesperrt.fehler || '') && !!frei.cookie && Auth.wartezeit(2) === 0 && Auth.wartezeit(3) === 2000 && Auth.wartezeit(4) === 4000 && Auth.wartezeit(30) === 900000, JSON.stringify([dritter, gesperrt, !!frei.cookie]));
+  const dritter = auth.anmelden('admin', 'falsch', '5.5.5.3'), gesperrt = auth.anmelden('admin', 'falsch', '5.5.5.4');
+  // 25.11.2026 (K14 nach Gegenprüfung): Fremde werden in der Sperre gar nicht geprüft (auch das richtige Passwort nicht – kein zusätzlicher
+  // Rateversuch, egal wie viele Adressen); ein bekanntes Gerät kommt durch, aber höchstens 5 Prüfungen je 15 min; fremdes/verändertes Cookie zählt nicht
+  const fremdRichtig = auth.anmelden('admin', 'admin', '5.5.5.9'), gc = `fah_adblock_geraet=${bekannt.geraet}`;
+  const gefaelscht = auth.anmelden('admin', 'admin', '5.5.5.10', `fah_adblock_geraet=${bekannt.geraet.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'))}`);
+  const frei = auth.anmelden('admin', 'admin', '5.5.5.4', gc);
+  for (let i = 0; i < 3; i++) auth.anmelden('admin', 'falsch', `5.5.6.${i}`);   // wieder gesperrt
+  for (let i = 0; i < 5; i++) auth.anmelden('admin', 'falsch', '5.5.5.11', gc);
+  const geraetErschoepft = auth.anmelden('admin', 'admin', '5.5.5.12', gc);
+  pruefe('Anmeldung: Bremse je Nutzername über Adressen hinweg (ab dem 3. Fehlversuch steigende Wartezeit 2 s, 4 s … 15 min); in der Sperre kein Passwort-Test für Fremde, bekanntes Gerät kommt mit dem richtigen Passwort durch (höchstens 5 Prüfungen je 15 min), gefälschtes Geräte-Cookie zählt nicht',
+    !!bekannt.cookie && !!bekannt.geraet && /falsch/.test(dritter.fehler) && /diesen Namen/.test(gesperrt.fehler || '') && /diesen Namen/.test(fremdRichtig.fehler || '') && /diesen Namen/.test(gefaelscht.fehler || '') && !!frei.cookie
+    && /diesen Namen/.test(geraetErschoepft.fehler || '') && Auth.wartezeit(2) === 0 && Auth.wartezeit(3) === 2000 && Auth.wartezeit(4) === 4000 && Auth.wartezeit(30) === 900000,
+    JSON.stringify([dritter, gesperrt, fremdRichtig, gefaelscht, !!frei.cookie, geraetErschoepft]));
   uhrA += 3600000;
   const pwNeu = auth.passwortAendern('admin', 'admin', 'neuesPasswort1');
   pruefe('Passwort ändern: altes muss stimmen, danach kein Standardpasswort', auth.passwortAendern('admin', 'falsch', 'neuesPasswort1').fehler && pwNeu.ok && !auth.sitzungLesen(`fah_adblock=${auth.anmelden('admin', 'neuesPasswort1', '4.4.4.4').cookie}`).standardPasswort);
@@ -589,6 +658,13 @@ try {
   const B = `http://127.0.0.1:${web.address().port}`;
   const holen = (p, o = {}) => fetch(B + p, o);
   {
+    // 25.11.2026 (K17): Livestrom trennt Zuhörer mit über 1 MB Rückstau, die anderen bekommen weiter Daten
+    const geschrieben = [], zu = []; const fake = (name, rueckstau) => ({ name, writableLength: rueckstau, destroyed: false, write: (x) => geschrieben.push(name), destroy() { this.destroyed = true; zu.push(name); } });
+    const liveProbe = new Set([fake('liest', 100), fake('haengt', 2e6)]);
+    liveSenden(liveProbe, 'data: x\n\n');
+    pruefe('Livestrom (K17): Zuhörer mit > 1 MB Rückstau getrennt und entfernt, lesende bekommen die Daten', geschrieben.join() === 'liest' && zu.join() === 'haengt' && liveProbe.size === 1, JSON.stringify({ geschrieben, zu }));
+  }
+  {
     // 25.11.2026 (Prüfung K1): `GET //` warf vor dem try → unbehandelte Ablehnung → Prozess (und DNS) beendet. Jetzt 400, Server läuft weiter.
     const roheAntwort = (ziel) => new Promise((ok) => { const net = require('node:net'); const s = net.connect(web.address().port, '127.0.0.1', () => s.write(`GET ${ziel} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`)); let t = ''; s.on('data', (d) => { t += d; }); s.on('end', () => ok(t.split('\r\n')[0])); s.on('error', (e) => ok('Fehler ' + e.message)); });
     const z1 = await roheAntwort('//'), z2 = await roheAntwort('//a:b'), z3 = await roheAntwort('/%'), danach = (await holen('/api/uebersicht')).status;
@@ -598,7 +674,7 @@ try {
   const login = await holen('/api/anmelden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'admin', passwort: 'admin' }) });
   const cookie = login.headers.get('set-cookie').split(';')[0];
   const ich = await (await holen('/api/ich', { headers: { cookie } })).json();
-  pruefe('Web: Anmeldung setzt HttpOnly-/SameSite-Cookie, /api/ich liefert CSRF-Token', /HttpOnly/.test(login.headers.get('set-cookie')) && /SameSite=Strict/.test(login.headers.get('set-cookie')) && ich.csrf && ich.standardPasswort);
+  pruefe('Web: Anmeldung setzt HttpOnly-/SameSite-Cookie (dazu das Geräte-Cookie nur für /api/anmelden), /api/ich liefert CSRF-Token', /fah_adblock_geraet=[^;]+; Path=\/api\/anmelden; HttpOnly; SameSite=Strict/.test(login.headers.get('set-cookie')) && /HttpOnly/.test(login.headers.get('set-cookie')) && /SameSite=Strict/.test(login.headers.get('set-cookie')) && ich.csrf && ich.standardPasswort);
   const ohneCsrf = await holen('/api/pause', { method: 'POST', headers: { cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ minuten: 5 }) });
   const fremd = await holen('/api/pause', { method: 'POST', headers: { cookie, 'x-csrf': ich.csrf, origin: 'https://boese.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ minuten: 5 }) });
   pruefe('Web: Schreiben ohne CSRF-Token oder von fremder Herkunft → 403', ohneCsrf.status === 403 && fremd.status === 403);
@@ -632,6 +708,14 @@ try {
   const dListe = await (await holen('/api/dienste', { headers: { cookie } })).json();
   await post('/api/dienste/youtube', { modus: 'frei' }, 'PUT');
   const dListen = await post('/api/dienste/tiktok', { modus: 'listen' }, 'PUT'), dArt = await post('/api/dienste/tiktok', { modus: 'unsinn' }, 'PUT');
+  {
+    await post('/api/dienste/spotify', { modus: 'listen' }, 'PUT'); await post('/api/dienste/spotify', { modus: 'sperren', geltung: 'profil:kinder' }, 'PUT');
+    await post('/api/dienste/netflix', { modus: 'sperren', geltung: 'profil:kinder' }, 'PUT');
+    const ds = einst.werte.dienste;
+    pruefe('Web (K5): Sperre nur für ein Profil merkt den bisherigen Grundzustand (Spotify vorher „nach Listen“ → grund listen); Vorgabe wird nicht extra gespeichert',
+      ds.spotify?.modus === 'sperren' && ds.spotify?.grund === 'listen' && ds.netflix?.modus === 'sperren' && ds.netflix?.grund === undefined, JSON.stringify({ spotify: ds.spotify, netflix: ds.netflix }));
+    await post('/api/dienste/spotify', { modus: 'frei' }, 'PUT'); await post('/api/dienste/netflix', { modus: 'frei' }, 'PUT');
+  }
   const pDienste = await post('/api/profile/kinder', { kategorien: {}, dienste: { tiktok: 'sperren', whatsapp: 'frei' } }, 'PUT');
   const pFalsch = await post('/api/profile/kinder', { kategorien: {}, dienste: { gibtsnicht: 'sperren' } }, 'PUT');
   const anbieter = await (await holen('/api/anbieter', { headers: { cookie } })).json();
@@ -691,10 +775,43 @@ try {
   const H = await instanz('haupt'); const E = await instanz('ersatz');
   const { code: spCode } = await (await H.sende('/api/spiegel/haupt', {})).json();
   H.ei.aendern((x) => { x.regeln.push({ id: 'r-haupt', typ: 'sperren', muster: 'nur-am-haupt.example', geltung: 'alle' }); x.pausen.global = Date.now() + 600000; x.web = { vertrauteProxies: ['172.16.0.0/12'] }; });
-  const spFalsch = await fetch(H.basis + '/api/spiegel/stand', { headers: { Authorization: 'Bearer falsch' } });
-  const spOhne = await fetch(H.basis + '/api/spiegel/stand');
-  const spStand = await (await fetch(H.basis + '/api/spiegel/stand', { headers: { Authorization: `Bearer ${spCode}` } })).json();
-  pruefe('Spiegel: Haupt liefert nur mit Kopplungscode, ohne UniFi-Zugang und vertraute Proxys', spFalsch.status === 401 && spOhne.status === 401 && spStand.art === 'fah-adblock-sicherung' && !('unifi' in spStand.einstellungen) && !('web' in spStand.einstellungen) && spStand.einstellungen.regeln.some((r) => r.id === 'r-haupt'));
+  {
+    // 25.11.2026 (Prüfung K2): Transport v2 – Code nie auf der Leitung, Stand verschlüsselt, Wiederholung/alter Zeitstempel/anderer Pfad abgelehnt
+    const { holen: spHolen, umschlagBauen, schluesselVonCode } = require('../src/spiegel.js');
+    const altErsatz = await fetch(H.basis + '/api/spiegel/stand', { headers: { Authorization: `Bearer ${spCode}` } });
+    const altText = (await altErsatz.json()).fehler || '';
+    const spFalsch = await spHolen(H.basis, 'falsch').then(() => 'ok', (e) => `${e.message}|${e.antwort}`);
+    const spStand = await spHolen(H.basis, spCode);
+    const K = schluesselVonCode(spCode), post = (pf, u) => fetch(H.basis + pf, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(u) });
+    const { umschlag } = umschlagBauen(K, '/api/spiegel/stand', undefined, '');
+    const r1 = await post('/api/spiegel/stand', umschlag), r1Text = await r1.text(), r2 = await post('/api/spiegel/stand', umschlag);
+    const alt = (await post('/api/spiegel/stand', umschlagBauen(K, '/api/spiegel/stand', undefined, '', Date.now() - 6 * 60000).umschlag)).status;
+    const anderPfad = (await post('/api/spiegel/stand', umschlagBauen(K, '/api/spiegel/meldung', undefined, '').umschlag)).status;
+    const veraendert = { ...umschlagBauen(K, '/api/spiegel/stand', undefined, '').umschlag }; veraendert.url = 'http://boese.example:8053';
+    const verStatus = (await post('/api/spiegel/stand', veraendert)).status;
+    pruefe('Spiegel v2: alter Ersatz (Bearer) bekommt 409 mit Hinweis; falscher Code 401; Haupt liefert verschlüsselt (Code nicht in der Anfrage, Regeln nicht im Klartext), ohne UniFi-Zugang/vertraute Proxys; Wiederholung, Zeitstempel > 5 min, anderer Pfad und veränderter Umschlag → 401',
+      altErsatz.status === 409 && /alte Kopplung/.test(altText) && /lehnt|Kopplungscode/.test(spFalsch) && /\|true$/.test(spFalsch) && spStand.art === 'fah-adblock-sicherung' && !('unifi' in spStand.einstellungen) && !('web' in spStand.einstellungen) && spStand.einstellungen.regeln.some((r) => r.id === 'r-haupt')
+      && !JSON.stringify(umschlag).includes(spCode) && r1.status === 200 && !r1Text.includes('r-haupt') && !r1Text.includes('nur-am-haupt') && r2.status === 401 && alt === 401 && anderPfad === 401 && verStatus === 401,
+      JSON.stringify({ alt: altErsatz.status, spFalsch, r1: r1.status, klar: r1Text.includes('r-haupt'), r2: r2.status, altTs: alt, anderPfad, verStatus }));
+    // Mann in der Mitte ohne Code: gefälschte Antwort lässt sich nicht öffnen und zählt NICHT als „Haupt gesehen“
+    const falle = http.createServer((q, r) => { q.resume(); q.on('end', () => { const eph = nodeCrypto.generateKeyPairSync('x25519'); r.writeHead(200, { 'Content-Type': 'application/json' }); r.end(JSON.stringify({ v: 2, pub: eph.publicKey.export({ format: 'der', type: 'spki' }).toString('base64'), daten: 'AAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAA==.e30=' })); }); });
+    await new Promise((r) => falle.listen(0, '127.0.0.1', r));
+    const mitm = await spHolen(`http://127.0.0.1:${falle.address().port}`, spCode).then(() => 'geöffnet', (e) => `${e.message}|${e.antwort}`);
+    falle.close();
+    pruefe('Spiegel v2: gefälschte Antwort (ohne Code) → „nicht entschlüsselbar“, zählt nicht als Lebenszeichen des Haupts', /nicht entschlüsselbar/.test(mitm) && /\|undefined$/.test(mitm), mitm);
+    // F3/F4 (Gegenprüfung): Schlüssel am Haupt nur verschlüsselt gespeichert (alte spiegel.json mit Klartext-Hash wird umgestellt);
+    // Umschläge von vor dem Start des Haupts werden abgelehnt (Einmalwerte liegen nur im Speicher)
+    const sd = path.join(tmp, 'spiegel-alt'); fs.mkdirSync(sd, { recursive: true });
+    const altHash = nodeCrypto.createHash('sha256').update('alter-code-123').digest('hex');
+    const vorStart = umschlagBauen(schluesselVonCode('alter-code-123'), '/api/spiegel/stand', undefined, '', Date.now() - 1000).umschlag;
+    fs.writeFileSync(path.join(sd, 'spiegel.json'), JSON.stringify({ rolle: 'haupt', code_hash: altHash }));
+    const sA = new Spiegel({ verzeichnis: sd, einst: H.ei, geheimnis: 's'.repeat(32), version: 'probe', anwenden: () => {} });
+    const gespeichert = fs.readFileSync(path.join(sd, 'spiegel.json'), 'utf8');
+    let vorStartFehler = ''; try { sA.standFuer(vorStart, '127.0.0.1'); } catch (e) { vorStartFehler = `${e.status} ${e.message}`; }
+    const nachStart = sA.standFuer(umschlagBauen(schluesselVonCode('alter-code-123'), '/api/spiegel/stand', undefined, '').umschlag, '127.0.0.1');
+    pruefe('Spiegel v2 (Gegenprüfung): alter Klartext-Hash wird beim Start verschlüsselt (Datei enthält ihn nicht mehr), Kopplung gilt weiter; Umschlag von vor dem Start → 401',
+      !gespeichert.includes(altHash) && JSON.parse(gespeichert).k && sA.status().code_gesetzt && nachStart?.v === 2 && /^401 .*Neustart/.test(vorStartFehler), vorStartFehler);
+  }
   const spKoppeln = await E.sende('/api/spiegel/ersatz', { url: H.basis, code: spCode });
   pruefe('Spiegel: Ersatz koppeln übernimmt Regeln und Pausen, eigene Proxys bleiben', spKoppeln.status === 200 && E.ei.werte.regeln.some((r) => r.id === 'r-haupt') && E.ei.werte.pausen.global === H.ei.werte.pausen.global && !(E.ei.werte.web?.vertrauteProxies || []).length, `HTTP ${spKoppeln.status}`);
   const spGesperrt = await E.sende('/api/regeln', { typ: 'erlauben', muster: 'x.example', geltung: 'alle' });
@@ -704,6 +821,36 @@ try {
   const spSt = await E.sp.abgleichen();
   const gesundE = await (await fetch(E.basis + '/api/health')).json(); const gesundH = await (await fetch(H.basis + '/api/health')).json();
   pruefe('Spiegel: Abgleich holt neue Regeln; Haupt merkt sich den Abruf; /api/health zeigt die Rolle', !spSt.fehler && E.ei.werte.regeln.some((r) => r.id === 'r-spaeter') && H.sp.status().ersatz && H.sp.status().ersatz.zeit > 0 && gesundE.rolle === 'ersatz' && gesundH.rolle === 'haupt');
+  {
+    // 25.11.2026 (K2/K4/K11): Austausch über den verschlüsselten Kanal – Daten des Ersatzes kommen beim Haupt an, die Antwort beim Ersatz, beide
+    // Seiten bekommen K (32 Byte) statt des Codes; der Austausch läuft auch, wenn die Übernahme des Stands scheitert (Haupt neuer als Ersatz)
+    let amHaupt = null, kHaupt = null, amErsatz = null, kErsatz = null;
+    H.sp.austausch = { empfangen: (d, K) => { amHaupt = d; kHaupt = K; return { nutzungBestaetigt: (d.nutzung || []).map((p) => p.lauf), aufgebraucht: { g1: ['dienst:x'] } }; } };
+    E.sp.austausch = { sammeln: () => ({ meldungen: { ereignisse: [{ titel: 'probe' }] }, nutzung: [{ lauf: 'lauf-probe-123', tag: 'x', daten: {} }] }), uebernehmen: (a, K) => { amErsatz = a; kErsatz = K; }, zurueck: () => {} };
+    const anwendenAlt = E.sp.anwenden; E.sp.anwenden = () => { throw new Error('Sicherung nicht übernommen: Feld unbekannt'); };
+    H.ei.aendern((x) => { x.regeln.push({ id: 'r-neuer', typ: 'erlauben', muster: 'neuer.example', geltung: 'alle' }); });
+    const gesehenVorher = E.sp.z.haupt_gesehen || 0; await new Promise((r) => setTimeout(r, 5));
+    const stA = await E.sp.abgleichen(); E.sp.anwenden = anwendenAlt; H.sp.austausch = null; E.sp.austausch = null;
+    pruefe('Spiegel v2: Austausch kommt verschlüsselt an (beide Seiten mit K statt Code), läuft auch bei gescheiterter Übernahme; Haupt gilt dann trotzdem als gesehen (K4)',
+      amHaupt?.meldungen?.ereignisse?.[0]?.titel === 'probe' && amErsatz?.nutzungBestaetigt?.[0] === 'lauf-probe-123' && amErsatz?.aufgebraucht?.g1?.[0] === 'dienst:x' && kHaupt?.length === 32 && kErsatz?.length === 32 && kHaupt.equals(kErsatz)
+      && /nicht übernommen/.test(stA.fehler || '') && E.sp.z.haupt_gesehen > gesehenVorher, JSON.stringify({ fehler: stA.fehler, amErsatz }));
+  }
+  {
+    // K11: Zeitkonto-Pakete mit Lauf-ID und Tag – verlorene Antwort führt nicht zu Doppelzählung, Pakete von gestern zählen nie heute
+    const { Zeitkonto } = require('../src/zeitkonto.js');
+    let uz = Date.UTC(2026, 10, 25, 20, 0); const zkE = new Zeitkonto({ jetzt: () => uz, zeitzone: 'Europe/Berlin' }), zkH = new Zeitkonto({ jetzt: () => uz, zeitzone: 'Europe/Berlin' });
+    zkE.vermerke('g', ['dienst:tiktok'], uz); uz += 120000; zkE.vermerke('g', ['dienst:tiktok'], uz);
+    const p1 = zkE.abholen(); zkH.annehmen(p1);                       // Haupt zählt, Antwort geht verloren
+    uz += 60000; zkE.vermerke('g', ['dienst:tiktok'], uz);
+    const p2 = zkE.abholen(); const best = zkH.annehmen(p2); zkE.bestaetigen(best);   // erneut gesendet + neues Paket
+    const minH = zkH.genutztMin('g', 'dienst:tiktok'), minE = zkE.genutztMin('g', 'dienst:tiktok'), offen = zkE.abholen().length;
+    zkE.vermerke('g', ['dienst:tiktok'], uz + 30000); const vorMitternacht = zkE.abholen();
+    uz = Date.UTC(2026, 10, 25, 23, 5);   // 00:05 in Berlin
+    const nachMitternacht = zkE.abholen(), bestGestern = zkH.annehmen(vorMitternacht);
+    pruefe('Zeitkonto (K11): erneut gesendetes Paket zählt beim Haupt nur einmal; bestätigte Pakete verschwinden; nach Mitternacht kein Paket von gestern, ein altes Paket wird bestätigt, aber nicht gebucht',
+      p1.length === 1 && p2.length === 2 && minH === minE && minH === 4 && offen === 0 && vorMitternacht.length === 1 && nachMitternacht.length === 0 && bestGestern.length === 1 && zkH.genutztMin('g', 'dienst:tiktok') === 0,
+      JSON.stringify({ p1: p1.length, p2: p2.length, minH, minE, offen, vor: vorMitternacht.length, nach: nachMitternacht.length, best: bestGestern.length, heuteH: zkH.genutztMin('g', 'dienst:tiktok') }));
+  }
   H.sp.hauptWerden(); const spAlt = await E.sp.abgleichen();
   pruefe('Spiegel: neuer Code am Haupt → Ersatz meldet den Fehler, behält seinen Stand', /Kopplungscode/.test(spAlt.fehler || '') && E.ei.werte.regeln.some((r) => r.id === 'r-spaeter'));
   // ── Koppeln von einer Oberfläche (09.10.2026): Partner-Adresse + Konto; leere Instanz holt sich den Stand der eingerichteten ──
@@ -749,6 +896,21 @@ try {
     pruefe('Kinderschutz: Migration ergänzt das Profil „Kinder“ einmal – spätere Änderungen des Betreibers bleiben', migriert && eM2.werte.profile.find((p) => p.id === 'kinder').kategorien.anonym.an === false && !eM2.werte.profile.find((p) => p.id === 'kinder').ruhezeiten);
     const { holen: listeHolen } = require('../src/dns/listen.js');
     const eingebaut = await listeHolen('eingebaut:anonym');
+    {
+      // 25.11.2026 (K12): kein Listen-Download ins interne Netz – Loopback/Metadaten/Link-local nie, private Netze nur als ausdrücklich eingetragene IP,
+      // nie über einen Namen (DNS-Rebinding) oder eine Umleitung; geprüft wird die tatsächlich verbundene Adresse
+      const { zielErlaubt } = require('../src/dns/listen.js');
+      const stub = (adr) => (name, opt, cb) => cb(null, [{ address: adr, family: adr.includes(':') ? 6 : 4 }]);
+      const r = async (url, o = {}) => listeHolen(url, { timeout: 400, ...o }).then(() => 'geladen', (e) => e.message);
+      const loop = await r('http://127.0.0.1:9/liste'), meta = await r('http://169.254.169.254/latest/meta-data'), v6 = await r('http://[::1]:9/x');
+      const rebind = await r('http://liste.example/x', { aufloesen: stub('127.0.0.1') }), privName = await r('http://liste.example/x', { aufloesen: stub('192.168.1.20') });
+      const datei = await r('file:///etc/passwd'), privIp = await r('http://10.255.255.1:9/x');
+      const gemappt = await Promise.all(['http://[::ffff:7f00:1]:9/x', 'http://[0:0:0:0:0:ffff:a9fe:a9fe]/x', 'http://[64:ff9b::7f00:1]/x', 'http://[::7f00:1]/x'].map((u) => r(u)));
+      pruefe('Listen-Download (K12): Loopback, Metadaten, ::1, IPv4 in IPv6 (::ffff:7f00:1, NAT64, IPv4-kompatibel), Name → 127.0.0.1 oder privat, file: abgelehnt; ausdrücklich eingetragene private IP erlaubt (scheitert hier nur an der Verbindung)',
+        [loop, meta, v6, ...gemappt].every((x) => /internen Netz/.test(x)) && [rebind, privName].every((x) => /ins interne Netz/.test(x)) && /Nur http/.test(datei) && !/intern/.test(privIp)
+        && zielErlaubt('185.199.108.133', false) && !zielErlaubt('::ffff:127.0.0.1', false) && !zielErlaubt('::ffff:c0a8:101', false) && zielErlaubt('::ffff:c0a8:101', true) && zielErlaubt('10.20.30.40', true) && !zielErlaubt('127.0.0.1', true),
+        JSON.stringify({ loop, meta, v6, gemappt, rebind, privName, datei, privIp }));
+    }
     pruefe('Kinderschutz: eingebaute Liste „anonym“ wird aus dem Programm gelesen (ngl.link, tellonym.me)', parse(eingebaut.text).domains.has('ngl.link') && parse(eingebaut.text).domains.has('tellonym.me'));
 
     // Filter: Hilfe, Ruhezeit, Zeitlimit, sichere Suche
@@ -760,6 +922,8 @@ try {
     const profK = { id: 'kinder', kategorien: { anonym: { an: true, zeitplan: [] }, jugendschutz: { an: true, zeitplan: [] } }, ruhezeiten: { messenger: [{ tage: [1, 2, 3, 4, 5, 6, 7], von: '21:00', bis: '06:30' }], spiele: [{ tage: [1], von: '21:00', bis: '23:00' }] }, sicher: { suche: true, youtube: 'moderat' }, limits: { 'dienst:tiktok': 30, 'rubrik:spiele': 60 } };
     fK.konfigurieren({ regeln: [{ id: 'r1', typ: 'sperren', muster: 'juuuport.de', geltung: 'alle' }], profile: [{ id: 'standard', kategorien: {} }, profK], listen: lK.quellen, geraete: { kind: { profil: 'kinder' } }, pausen: { global: 0, geraete: {} }, dienste: {} });
     const hilfe = fK.entscheide({ geraetId: 'kind', name: 'www.juuuport.de' });
+    { const dk = fK.ttlDeckel('kind', 'web.whatsapp.com', T - 90 * 60000), dkHilfe = fK.ttlDeckel('kind', 'www.juuuport.de', T - 90 * 60000);   // T = Mo 22:00 → 20:30
+      pruefe('TTL-Deckel (K15): Messenger-Ruhezeit ab 21:00 → um 20:30 erlaubte WhatsApp-Antwort höchstens 1800 s; Hilfsangebot ohne Deckel', dk === 1800 && dkHilfe === 0, JSON.stringify({ dk, dkHilfe })); }
     pruefe('Kinderschutz: Hilfsangebote bleiben erreichbar – auch gegen Sperrregel und Jugendschutz-Liste', hilfe.aktion === 'erlaubt' && hilfe.grund === 'Hilfsangebot' && fK.entscheide({ geraetId: 'kind', name: 'ngl.link' }).aktion === 'geblockt' && fK.entscheide({ geraetId: 'kind', name: 'ngl.link' }).kategorie === 'anonym');
     const nachts = fK.entscheide({ geraetId: 'kind', name: 'web.whatsapp.com' });
     jetztK = Date.parse('2026-11-23T12:00:00+01:00'); const mittags = fK.entscheide({ geraetId: 'kind', name: 'web.whatsapp.com' }); jetztK = T;
@@ -944,7 +1108,7 @@ try {
         (weg.flags & 15) === 2 && !logW.some((x) => /juuuport/.test(x.domain)) && (bvEdns.flags & 15) === 2 && (bvOhne.flags & 15) === 2 && !logB.some((x) => /juuuport/.test(x.domain)) && logB.some((x) => x.aktion === 'fehler' && x.domain === 'seite.de'),
         JSON.stringify({ weg: weg.flags & 15, logW: logW.map((x) => x.domain), bvEdns: bvEdns.flags & 15, bvOhne: bvOhne.flags & 15, logB: logB.map((x) => [x.domain, x.aktion]) }));
     }
-    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
+    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && prof.buf.toString().includes('<key>PayloadScope</key><string>System</string>') && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
     if (mitOpenssl) {
       unt.speichereZertifikat(hostU, { schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8'), kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), bis: Date.now() + 80 * 86400000 });
       unt.dotPruefen(); await new Promise((r) => setTimeout(r, 200));

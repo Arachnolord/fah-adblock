@@ -26,10 +26,13 @@ const PORT_NAME = 'FAH-Adblock DoT (unterwegs)';
 const UEBERNAHME_MS = 6 * 60000;   // Ersatz übernimmt, wenn der Haupt so lange nicht erreichbar ist
 // Übergabe Haupt → Ersatz (Zertifikate, FAH-Proxy-Zugang): je Abgleich ein Schlüssel aus X25519 (Ersatz und Haupt erzeugen je
 // ein Einmal-Schlüsselpaar), abgeleitet per HKDF mit dem Kopplungscode, AES-256-GCM mit beiden öffentlichen Schlüsseln als AAD.
-// Wer die (unverschlüsselte) Verbindung im LAN nur mitliest, kann das Paket damit nicht öffnen.
+// Wer die Verbindung im LAN nur mitliest, kann das Paket damit nicht öffnen. Seit 25.11.2026 geht außerdem der Kopplungscode beim Abgleich
+// nicht mehr über die Leitung und der ganze Abgleich ist signiert und verschlüsselt (spiegel.js, Transport v2) – vorher reichte der mitgelesene Code für eine eigene Anfrage.
 const pubAus = (b64) => crypto.createPublicKey({ key: Buffer.from(String(b64), 'base64'), format: 'der', type: 'spki' });
 const pubText = (k) => k.export({ format: 'der', type: 'spki' }).toString('base64');
-function paketSchluessel(privat, oeffentlich, code) { return Buffer.from(crypto.hkdfSync('sha256', crypto.diffieHellman({ privateKey: privat, publicKey: oeffentlich }), crypto.createHash('sha256').update(String(code)).digest(), 'fah-adblock-unterwegs-v2', 32)); }
+// `schluessel`: K = sha256(Kopplungscode) als Buffer (seit 25.11.2026 kennt der Haupt nur noch diesen Hash) oder – für Proben – der Code als Text
+const kAus = (schluessel) => (Buffer.isBuffer(schluessel) ? schluessel : crypto.createHash('sha256').update(String(schluessel)).digest());
+function paketSchluessel(privat, oeffentlich, schluessel) { return Buffer.from(crypto.hkdfSync('sha256', crypto.diffieHellman({ privateKey: privat, publicKey: oeffentlich }), kAus(schluessel), 'fah-adblock-unterwegs-v2', 32)); }
 function einmalSchluessel() { return crypto.generateKeyPairSync('x25519'); }
 function paketVerschluesseln(obj, code, ersatzPub) {
   const { privateKey, publicKey } = einmalSchluessel(), hauptPub = pubText(publicKey), iv = crypto.randomBytes(12);
@@ -355,7 +358,8 @@ class Unterwegs {
     res.writeHead(200, { 'Content-Type': 'application/dns-message', 'Content-Length': antwort.length, 'Cache-Control': 'no-store' });
     res.end(antwort);
   }
-  /** iOS/iPadOS/macOS-Profil: DNS-over-HTTPS über den Gerätenamen, immer an (auch im WLAN) */
+  /** iOS/iPadOS/macOS-Profil: DNS-over-HTTPS über den Gerätenamen, immer an (auch im WLAN). PayloadScope System: macOS installiert DNS-Einstellungen
+   *  nur systemweit („profile must be scoped to system“ → „VPN-Dienst konnte nicht installiert werden“, 25.11.2026); iOS ignoriert den Schlüssel. */
   profil(gid) {
     const g = this.u.geraete[gid], host = this.hostVon(gid);
     if (!g || !host) return null;
@@ -386,6 +390,7 @@ class Unterwegs {
   <key>PayloadDisplayName</key><string>FAH-Adblock – ${xml(name)}</string>
   <key>PayloadIdentifier</key><string>de.fah.adblock.${xml(g.kennung)}</string>
   <key>PayloadRemovalDisallowed</key><false/>
+  <key>PayloadScope</key><string>System</string>
   <key>PayloadType</key><string>Configuration</string>
   <key>PayloadUUID</key><string>${uuidAus(`profil|${g.geheim}`)}</string>
   <key>PayloadVersion</key><integer>1</integer>

@@ -436,8 +436,10 @@ function modusVon(dienst, einstellungen = {}) {
   if (dienst.fest) return { modus: 'frei', geltung: 'alle' };
   const e = einstellungen[dienst.id];
   if (!e) return { modus: dienst.vorgabe, geltung: 'alle' };
-  if (e.gesperrt) return { modus: 'sperren', geltung: e.geltung || 'alle' };   // ältere Einstellungen
-  return { modus: e.modus === 'frei' || e.modus === 'listen' || e.modus === 'sperren' ? e.modus : dienst.vorgabe, geltung: e.geltung || 'alle' };
+  // grund: was für alle NICHT betroffenen Geräte gilt, wenn nur für ein Profil/Gerät gesperrt ist – der gemerkte Zustand oder die Vorgabe
+  const grund = e.grund === 'frei' || e.grund === 'listen' ? e.grund : dienst.vorgabe === 'sperren' ? 'listen' : dienst.vorgabe;
+  if (e.gesperrt) return { modus: 'sperren', geltung: e.geltung || 'alle', grund };   // ältere Einstellungen
+  return { modus: e.modus === 'frei' || e.modus === 'listen' || e.modus === 'sperren' ? e.modus : dienst.vorgabe, geltung: e.geltung || 'alle', grund };
 }
 
 module.exports = { DIENSTE, GRUPPEN, index, ausnahmen, modusVon };

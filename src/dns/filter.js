@@ -50,6 +50,25 @@ function zeitplanAktiv(zeitplan, ts, zeitzone) {
   });
 }
 
+// Sekunden bis zum nächsten Beginn eines Fensters (innerhalb einer Woche), null = kein Fenster. Ganztägige Fenster beginnen um 00:00.
+function sekundenBisStart(zeitplan, ts, zeitzone) {
+  if (!Array.isArray(zeitplan) || !zeitplan.length) return null;
+  const { tag, minute } = zeitVon(ts, zeitzone), sek = Math.floor(ts / 1000) % 60;
+  let best = null;
+  for (const f of zeitplan) {
+    const von = minuteVon(f?.von), bis = minuteVon(f?.bis), tage = Array.isArray(f?.tage) ? f.tage : [1, 2, 3, 4, 5, 6, 7];
+    if (von === null || bis === null) continue;
+    const start = von === bis ? 0 : von;
+    for (let d = 0; d <= 7; d++) {
+      const t = ((tag - 1 + d) % 7) + 1;
+      if (!tage.includes(t)) continue;
+      const s = (d * 1440 + start - minute) * 60 - sek;
+      if (s > 0) { if (best === null || s < best) best = s; break; }
+    }
+  }
+  return best;
+}
+
 function musterLesen(text) {
   const s = String(text || '').trim().toLowerCase();
   const nurSub = s.startsWith('*.');
@@ -85,9 +104,9 @@ class Filter {
     const profilId = typeof profil === 'string' ? profil : profil?.id;
     const imProfil = typeof profil === 'object' ? profil?.dienste?.[dienst.id] : null;
     if (imProfil === 'frei' || imProfil === 'sperren' || imProfil === 'listen') return imProfil;
-    const { modus, geltung } = dienste.modusVon(dienst, this.dienstEinst);
+    const { modus, geltung, grund } = dienste.modusVon(dienst, this.dienstEinst);
     if (modus !== 'sperren') return modus;
-    return geltung === 'alle' || geltung === `profil:${profilId}` || geltung === `geraet:${geraetId}` ? 'sperren' : 'listen';
+    return geltung === 'alle' || geltung === `profil:${profilId}` || geltung === `geraet:${geraetId}` ? 'sperren' : (grund || 'listen');
   }
   profilVon(geraetId) { return this.profile.get(this.geraete[geraetId]?.profil) || this.profile.get('standard') || [...this.profile.values()][0] || { id: 'standard', kategorien: {} }; }
   pauseBis(geraetId, jetzt = this.jetzt()) {
@@ -122,8 +141,33 @@ class Filter {
     if (this.pauseBis(geraetId, jetzt)) return null;
     return kinderschutz.sicherZiel(String(name || '').toLowerCase().replace(/\.$/, ''), this.profilVon(geraetId).sicher);
   }
-  // Zeitlimit-Ziele eines Dienstes in einem Profil (für das Zeitkonto)
-  limitZiele(profil, dienst) {
+  // „Mitbenutzte“ Domains (z. B. giphy, Windows-/Office-Hintergrund bei Teams) gehören zur Infrastruktur, nicht zur Nutzung des Dienstes:
+  // keine Sperre, keine Ruhezeit, kein Zeitlimit – und sie zählen auch NICHT ins Zeitkonto (25.11.2026, K6: vorher zählten sie, sperrten aber nie)
+  istMitbenutzt(dienst, domain) { return !!dienst?.mitbenutzt?.some((m) => domain === m || domain.endsWith('.' + m)); }
+  // TTL-Deckel für eine ERLAUBTE Antwort (25.11.2026, Prüfung K15): Beginnt später ein Fenster, das diese Domain für dieses Gerät sperrt
+  // (Ruhezeit der Rubrik oder Zeitplan einer Kategorie, deren Liste die Domain führt), darf das Gerät die Antwort nicht über dessen Beginn
+  // hinaus behalten – sonst lief z. B. ein um 19:25 aufgelöster Spielename mit TTL 3600 nach Ruhezeitbeginn 19:30 noch eine Stunde weiter.
+  // → Sekunden (mindestens 10) oder 0 = kein Deckel
+  ttlDeckel(geraetId, name, jetzt = this.jetzt()) {
+    const profil = this.profilVon(geraetId), kats = profil.kategorien || {}, ruhen = profil.ruhezeiten || {};
+    const mitPlan = Object.values(kats).some((k) => k?.an && Array.isArray(k.zeitplan) && k.zeitplan.length) || Object.values(ruhen).some((r) => Array.isArray(r) && r.length);
+    if (!mitPlan) return 0;
+    const domain = String(name || '').toLowerCase().replace(/\.$/, ''), dienst = this.dienstVon(domain);
+    if (dienst?.fest) return 0;
+    let bis = null;
+    const nimm = (s) => { if (s !== null && (bis === null || s < bis)) bis = s; };
+    if (dienst && !dienst.einzelnFrei && !this.istMitbenutzt(dienst, domain)) nimm(sekundenBisStart(ruhen[dienst.gruppe], jetzt, this.zeitzone));
+    if (!dienst || this.dienstModus(dienst, geraetId, profil) !== 'frei') {
+      for (const id of this.listen.treffer(domain)) {
+        const k = this.kategorieVonListe.get(id); if (!k || k === 'freigabe' || !kats[k]?.an) continue;
+        nimm(sekundenBisStart(kats[k].zeitplan, jetzt, this.zeitzone));
+      }
+    }
+    return bis === null ? 0 : Math.max(10, bis);
+  }
+  // Zeitlimit-Ziele eines Dienstes in einem Profil (für das Zeitkonto); `domain` angegeben → mitbenutzte Domains zählen nicht
+  limitZiele(profil, dienst, domain = null) {
+    if (domain && this.istMitbenutzt(dienst, domain)) return [];
     const l = profil?.limits; if (!l || !dienst || dienst.fest) return [];
     const z = [];
     if (l[`dienst:${dienst.id}`]) z.push(`dienst:${dienst.id}`);
@@ -142,7 +186,7 @@ class Filter {
     if (frei.length) return { aktion: 'erlaubt', grund: 'Freigabe', regel: frei[0].id, profil: profil.id };
     const sperre = this.passendeRegeln(domain, 'sperren', geraetId, profil.id, jetzt);
     if (sperre.length) return { aktion: 'geblockt', grund: 'Eigene Regel', regel: sperre[0].id, profil: profil.id };
-    if (dienst && !dienst.mitbenutzt?.some((m) => domain === m || domain.endsWith('.' + m))) {
+    if (dienst && !this.istMitbenutzt(dienst, domain)) {
       // Ruhezeit der Rubrik (einzeln freigestellte Dienste wie Pokémon GO zählen nicht zur Rubrik)
       const ruhe = !dienst.einzelnFrei && profil.ruhezeiten?.[dienst.gruppe];
       if (Array.isArray(ruhe) && ruhe.length && zeitplanAktiv(ruhe, jetzt, this.zeitzone)) return { aktion: 'geblockt', grund: 'Ruhezeit', dienst: dienst.id, dienstName: dienst.name, rubrik: dienst.gruppe, profil: profil.id };
@@ -151,7 +195,7 @@ class Filter {
     }
     if (dienst) {
       const modus = this.dienstModus(dienst, geraetId, profil);
-      if (modus === 'sperren' && !dienst.mitbenutzt?.some((m) => domain === m || domain.endsWith('.' + m))) return { aktion: 'geblockt', grund: 'Dienst gesperrt', dienst: dienst.id, dienstName: dienst.name, profil: profil.id };
+      if (modus === 'sperren' && !this.istMitbenutzt(dienst, domain)) return { aktion: 'geblockt', grund: 'Dienst gesperrt', dienst: dienst.id, dienstName: dienst.name, profil: profil.id };
       if (modus === 'frei') return { aktion: 'erlaubt', grund: 'Geschützter Dienst', dienst: dienst.id, dienstName: dienst.name, listen: this.listen.treffer(domain), profil: profil.id };
     }
     const treffer = this.listen.treffer(domain);
@@ -172,4 +216,4 @@ class Filter {
   }
 }
 
-module.exports = { Filter, zeitplanAktiv, musterLesen };
+module.exports = { Filter, zeitplanAktiv, sekundenBisStart, musterLesen };

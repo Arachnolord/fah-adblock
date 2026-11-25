@@ -12,6 +12,7 @@
 // Zusatzzeit („+15 min“) gilt nur für heute. Der Ersatz schickt seine Nutzung an den Haupt und übernimmt dessen „aufgebraucht“.
 'use strict';
 const fs = require('fs');
+const crypto = require('crypto');
 
 const LUECKE = 5 * 60000, START = 60000;
 const VERBOTEN = new Set(['__proto__', 'constructor', 'prototype']);
@@ -72,8 +73,40 @@ class Zeitkonto {
     if (this.fremd[gid]) this.fremd[gid] = this.fremd[gid].filter((z) => z !== ziel);
     this.geaendert = true;
   }
-  // ── Haupt/Ersatz ──
-  abholen() { const d = this.delta; this.delta = {}; return d; }
+  // ── Haupt/Ersatz (25.11.2026, Prüfung K11) ──
+  // Der Ersatz schickt seine Nutzung in Paketen mit Lauf-ID und Tag. Ein Paket bleibt ausstehend, bis der Haupt seine ID bestätigt, und geht
+  // bis dahin UNVERÄNDERT erneut mit; der Haupt zählt jede ID nur einmal und nur am selben Tag. Vorher wurde bei verlorener Antwort das ganze
+  // Delta erneut (und kumuliert) gebucht, und Nutzung von vor Mitternacht konnte dem neuen Tag zugeschlagen werden.
+  /** Ersatz: neue Nutzung als Paket einreihen → alle ausstehenden Pakete von heute (höchstens 30) */
+  abholen() {
+    const z = this.heute();   // Tageswechsel zuerst: Nutzung von gestern geht nie an den neuen Tag
+    const aus = Array.isArray(z.ausstehend) ? z.ausstehend : [];
+    if (Object.keys(this.delta).length) { aus.push({ lauf: crypto.randomBytes(12).toString('base64url'), tag: z.tag, daten: this.delta }); this.delta = {}; this.geaendert = true; }
+    z.ausstehend = aus.filter((p) => p.tag === z.tag).slice(-30);
+    return z.ausstehend.slice();
+  }
+  /** Ersatz: vom Haupt bestätigte Pakete streichen */
+  bestaetigen(laeufe) {
+    if (!Array.isArray(laeufe) || !Array.isArray(this.z.ausstehend)) return;
+    const s = new Set(laeufe.filter((x) => typeof x === 'string'));
+    const vorher = this.z.ausstehend.length; this.z.ausstehend = this.z.ausstehend.filter((p) => !s.has(p.lauf));
+    if (this.z.ausstehend.length !== vorher) this.geaendert = true;
+  }
+  /** Haupt: Pakete des Ersatzes annehmen → bestätigte Lauf-IDs (auch verworfene: anderer Tag oder schon gezählt) */
+  annehmen(pakete, ts = this.jetzt()) {
+    if (!Array.isArray(pakete)) return [];
+    const z = this.heute(), gesehen = (z.gesehen && typeof z.gesehen === 'object') ? z.gesehen : (z.gesehen = {}), ok = [];
+    for (const p of pakete.slice(0, 30)) {
+      if (!p || typeof p.lauf !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(p.lauf)) continue;
+      ok.push(p.lauf);
+      if (p.tag !== z.tag || Object.hasOwn(gesehen, p.lauf)) continue;
+      gesehen[p.lauf] = ts;
+      this.hinzufuegen(p.daten, ts);
+    }
+    const ids = Object.keys(gesehen); if (ids.length > 2000) for (const id of ids.slice(0, ids.length - 2000)) delete gesehen[id];
+    this.geaendert = true;
+    return ok;
+  }
   hinzufuegen(nutzung, ts = this.jetzt()) {
     if (!nutzung || typeof nutzung !== 'object') return;
     for (const [gid, ziele] of Object.entries(nutzung).slice(0, 500)) {

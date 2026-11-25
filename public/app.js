@@ -94,6 +94,7 @@
           <button class="knopf leise klein" id="themeknopf" title="Hell/Dunkel">◐</button>
         </div>
       </header>
+      <div class="warnleiste versteckt" id="warnleiste" role="alert"></div>
       <main id="haupt"></main>
       <nav class="untennavi" aria-label="Bereiche">${ANSICHTEN.filter((a) => a.id !== 'statistik').map((a) => `<button data-ansicht="${a.id}"><span>${a.symbol}</span>${a.kurz || a.name}</button>`).join('')}</nav>`;
     if (!rahmen.verdrahtet) { document.addEventListener('click', klickVerteiler); rahmen.verdrahtet = true; }
@@ -119,6 +120,9 @@
     pille.querySelector('span').textContent = !u.dns.laeuft ? 'DNS gestoppt' : pauseBis ? `pausiert bis ${new Date(pauseBis).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : `Schutz aktiv${ms ? ` · ${ms.name} ${ms.ms} ms` : ''}`;
     knopf.classList.toggle('pausiert', !!pauseBis);
     knopf.textContent = pauseBis ? `▶ Pause · noch ${Math.max(1, Math.ceil((pauseBis - Date.now()) / 60000))} min` : '⏸ Pause';
+    // Warnungen vom Start (beschädigte Einstellungs-/Nutzerdatei) – bleiben sichtbar, bis FAH-Adblock neu startet
+    const wl = $('#warnleiste'), ws = u.warnungen || [];
+    if (wl) { wl.classList.toggle('versteckt', !ws.length); wl.innerHTML = ws.map((t) => `<div>⚠️ ${esc(t)}</div>`).join(''); }
   }
   async function ladeUebersicht() {
     try {
@@ -1017,11 +1021,12 @@
       const gid = zeile.dataset.uggeraet, d = u.geraete.find((x) => x.id === gid);
       if (e.target.closest('[data-ugiphone]')) {
         const lokal = `/unterwegs/${encodeURIComponent(d.geheim)}/profil.mobileconfig`, fern = d.host ? `https://${d.host}${lokal}` : '';
-        return hinweisDialog(`🍏 iPhone/iPad: ${d.name}`, `<p style="margin:0 0 8px">Ein DNS-Server lässt sich am iPhone nicht wie bei Android eintippen – iOS braucht dafür ein kleines <b>Profil</b>. Es gilt im WLAN und im Mobilfunk.</p>
+        return hinweisDialog(`🍏 iPhone/iPad/Mac: ${d.name}`, `<p style="margin:0 0 8px">Ein DNS-Server lässt sich am iPhone nicht wie bei Android eintippen – iOS braucht dafür ein kleines <b>Profil</b>. Es gilt im WLAN und im Mobilfunk.</p>
           <ol class="dialogschritte"><li>Diesen Link <b>auf dem iPhone in Safari</b> öffnen – vom Mac aus: <b>Link kopieren</b> und per AirDrop oder Nachricht ans iPhone schicken.</li>
           <li>„<b>Zulassen</b>“ tippen → „Profil geladen“.</li>
           <li>Einstellungen → ganz oben <b>„Profil geladen“</b> → <b>Installieren</b> → Code eingeben → <b>Installieren</b>.</li>
           <li>Einstellungen → Allgemein → <b>VPN und Geräteverwaltung</b> → <b>DNS</b>: „FAH-Adblock“ muss ausgewählt sein.</li></ol>
+          <p style="margin:8px 0 4px"><b>Am Mac:</b> „Profil hier laden“ → Systemeinstellungen → Allgemein → <b>Geräteverwaltung</b> → Profil doppelklicken → <b>Installieren</b> (fragt nach dem Mac-Passwort, das Profil gilt für den ganzen Mac). Danach steht „FAH-Adblock DNS“ unter Systemeinstellungen → Netzwerk → Filter.</p>
           ${fern ? `<div class="mono dialogname">${esc(fern)}</div>` : ''}
           ${info('Kontrolle: Nach der ersten Anfrage steht in der Zeile „zuletzt unterwegs gefragt …“. Zeigt sie das nie, testweise iCloud Privat-Relay ausschalten (Einstellungen → Name → iCloud → Privat-Relay). Entfernen: Einstellungen → Allgemein → VPN und Geräteverwaltung → Profil → Profil entfernen. „Neu ausstellen“ macht den alten Link ungültig.')}`,
           [...(fern ? [{ text: '📋 Link kopieren', art: 'gruen', fn: () => navigator.clipboard?.writeText(fern).then(() => toast('Link kopiert – jetzt ans iPhone schicken'), () => toast(fern)) }] : []),

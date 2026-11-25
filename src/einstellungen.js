@@ -11,7 +11,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const net = require('net');
-const { netz } = require('./netz');
+const { netz, listenIdOk } = require('./netz');
+const { schreibenSicher, lesenRobust } = require('./datei');
 const dienstKatalog = require('./dienste');
 
 const KATEGORIEN = [
@@ -109,7 +110,7 @@ function bereinigen(w, v, melden = (t) => console.warn(`[einstellungen] ${t}`)) 
     w[name] = gut;
   };
   liste('kategorien', (k) => typeof k.id === 'string' && k.id);
-  liste('listen', (l) => typeof l.id === 'string' && l.id);   // eine unbrauchbare Adresse meldet die Liste selbst als Fehler
+  { const ids = new Set(); liste('listen', (l) => { const ok = listenIdOk(l.id) && !ids.has(l.id); ids.add(l.id); return ok; }); }   // ID landet im Dateinamen; eine unbrauchbare Adresse meldet die Liste selbst als Fehler
   liste('profile', (p) => typeof p.id === 'string' && p.id && (p.kategorien === undefined || objekt(p.kategorien)));
   liste('regeln', (r) => typeof r.id === 'string' && ['erlauben', 'sperren'].includes(r.typ) && typeof r.muster === 'string');
   liste('upstream', (u) => { try { return new URL(String(u.url)).protocol === 'https:'; } catch (e) { return false; } });
@@ -199,11 +200,17 @@ class Einstellungen {
   }
   laden() {
     const v = vorgaben(this.env);
-    let gelesen = null;
-    try { gelesen = JSON.parse(fs.readFileSync(this.datei, 'utf8')); } catch (e) {}
+    // Kaputte Datei nie still überschreiben (K7): wegsichern, letzten guten Stand (.bak) nehmen, sonst Werkseinstellung – mit Warnung in der Oberfläche
+    const r = lesenRobust(this.datei, { pruefen: (d) => !Array.isArray(d) });
+    let gelesen = r.daten;
+    if (r.kaputt) {
+      const weg = path.basename(r.kaputt);
+      this.warnung = r.quelle === 'sicherung' ? `Die Einstellungsdatei war beschädigt (weggesichert als ${weg}). Geladen ist der letzte gesicherte Stand – bitte die letzten Änderungen prüfen.`
+        : `Die Einstellungsdatei war beschädigt (weggesichert als ${weg}) und keine Sicherung war lesbar – es gelten die Werkseinstellungen. Bitte unter Einstellungen eine Sicherung einspielen.`;
+      console.error(`[einstellungen] ${this.warnung}`);
+    }
     if (!gelesen) { this.werte = v; this.speichern(); return this; }
     // Neue Vorgaben ergänzen (neue Listen/Kategorien/Profile), vorhandene Werte bleiben
-    if (typeof gelesen !== 'object' || Array.isArray(gelesen)) gelesen = {};
     const w = { ...v, ...gelesen, dns: { ...v.dns, ...(gelesen.dns || {}) }, unifi: { ...v.unifi, ...(gelesen.unifi || {}) }, protokoll: { ...v.protokoll, ...(gelesen.protokoll || {}) }, pausen: { global: 0, geraete: {}, ...(gelesen.pausen || {}) }, web: { ...v.web, ...(gelesen.web || {}) },
       meldungen: { ...v.meldungen, ...(gelesen.meldungen || {}) }, unterwegs: { ...v.unterwegs, ...(gelesen.unterwegs || {}) } };
     bereinigen(w, v);
@@ -236,14 +243,10 @@ class Einstellungen {
     }
     w.vorgabenListen = [...angeboten];
     this.werte = w;
-    if (geaendert || migriert || !gelesen.vorgabenListen) this.speichern();
+    if (geaendert || migriert || !gelesen.vorgabenListen || r.kaputt) this.speichern();
     return this;
   }
-  speichern(werte = this.werte) {
-    fs.mkdirSync(this.verzeichnis, { recursive: true });
-    fs.writeFileSync(this.datei + '.tmp', JSON.stringify(werte, null, 1));
-    fs.renameSync(this.datei + '.tmp', this.datei);
-  }
+  speichern(werte = this.werte) { schreibenSicher(this.datei, JSON.stringify(werte, null, 1)); }
   // Erst schreiben, dann übernehmen (25.11.2026): scheitert das Speichern (volle Platte), bleibt alles beim alten Stand – Speicher
   // und Datei laufen nie auseinander, der Fehler geht an den Aufrufer (Oberfläche: Meldung; Aufräum-Timer: nächster Takt versucht erneut)
   aendern(fn) {

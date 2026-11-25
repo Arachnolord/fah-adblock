@@ -8,11 +8,14 @@
 'use strict';
 const net = require('net');
 
-// IPv4-mapped IPv6 („::ffff:192.168.1.5“) → IPv4
+// IPv4-mapped IPv6 → IPv4, in JEDER Schreibweise („::ffff:10.1.2.3“, „::ffff:a01:203“, „0:0:0:0:0:ffff:a01:203“). Die Hex-Form liefert z. B.
+// der URL-Parser (25.11.2026: „[::ffff:127.0.0.1]“ wurde zu „::ffff:7f00:1“ und rutschte an den IPv4-Netzen vorbei)
 function normIp(ip) {
-  const s = String(ip || '').trim();
-  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(s);
-  return m ? m[1] : s.toLowerCase();
+  const s = String(ip || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!net.isIPv6(s) || !s.includes('ffff')) return s;
+  const b = v6Bytes(s);
+  if (b.slice(0, 10).every((x) => x === 0) && b[10] === 255 && b[11] === 255) return `${b[12]}.${b[13]}.${b[14]}.${b[15]}`;
+  return s;
 }
 
 function v4Zahl(ip) { return ip.split('.').reduce((a, n) => a * 256 + (+n), 0); }
@@ -73,4 +76,8 @@ function suffixe(domain) {
   return aus;
 }
 
-module.exports = { normIp, netz, netzliste, normDomain, suffixe };
+// Listen-IDs landen im Dateinamen (data/listen/<id>.txt) – nur Buchstaben, Ziffern, - und _ (25.11.2026, Prüfung K9: „../x“ aus einer
+// Sicherung oder einem Spiegel-Stand hätte sonst Dateien außerhalb des Listenordners überschrieben)
+const listenIdOk = (id) => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id);
+
+module.exports = { normIp, netz, netzliste, normDomain, suffixe, listenIdOk };

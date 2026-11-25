@@ -11,6 +11,18 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { Worker } = require('worker_threads');
+
+// Leser-Thread mit eigener, nur lesender Verbindung (25.11.2026, Messung am Haupt: 2,8 Mio. Zeilen → „Meistgeblockt“ über 30 Tage 470 ms,
+// Suche nach einem seltenen Begriff 1,4 s – solange stand die DNS-Beantwortung). Schwere Auswertungen laufen jetzt dort.
+const LESER = `
+const { parentPort, workerData } = require('worker_threads');
+const { DatabaseSync } = require('node:sqlite');
+let db = null;
+parentPort.on('message', ({ id, sql, werte }) => {
+  try { db = db || new DatabaseSync(workerData.datei, { readOnly: true }); parentPort.postMessage({ id, zeilen: db.prepare(sql).all(...werte) }); }
+  catch (e) { parentPort.postMessage({ id, fehler: e.message }); }
+});`;
 
 const AKTION = { erlaubt: 0, geblockt: 1, lokal: 2, fehler: 3, gebremst: 4 };
 const AKTION_NAME = Object.fromEntries(Object.entries(AKTION).map(([k, v]) => [v, k]));
@@ -147,15 +159,48 @@ class Protokoll {
     return this.db.prepare(`SELECT domain, COUNT(*) n, MAX(ts) zuletzt, grund, MAX(detail) detail FROM anfragen WHERE geraet = ? AND aktion = 1 AND ts >= ? AND grund != 'DoH-Kanarie' GROUP BY domain ORDER BY zuletzt DESC LIMIT 60`)
       .all(geraet, this.jetzt() - minuten * 60000);
   }
-  eintraege({ geraet = '', nurGeblockt = false, suche = '', vor = 0, limit = 100 } = {}) {
-    this.schreiben();
+  eintraegeSql({ geraet = '', nurGeblockt = false, suche = '', vor = 0, limit = 100 } = {}) {
     const bed = [], werte = [];
     if (geraet) { bed.push('geraet = ?'); werte.push(geraet); }
     if (nurGeblockt) bed.push('aktion = 1');
     if (suche) { bed.push('domain LIKE ?'); werte.push(`%${String(suche).replace(/[%_]/g, '')}%`); }
     if (vor) { bed.push('ts < ?'); werte.push(+vor); }
-    const zeilen = this.db.prepare(`SELECT a.ts, a.ip, a.geraet, g.name, a.domain, a.typ, a.aktion, a.grund, a.detail, a.ms, a.cache FROM anfragen a LEFT JOIN geraete g ON g.geraet = a.geraet ${bed.length ? 'WHERE ' + bed.map((b) => 'a.' + b).join(' AND ') : ''} ORDER BY a.ts DESC LIMIT ?`).all(...werte, Math.max(1, Math.min(500, Math.round(+limit) || 100)));
-    return zeilen.map((z) => ({ ...z, aktion: AKTION_NAME[z.aktion], cache: !!z.cache }));
+    return { sql: `SELECT a.ts, a.ip, a.geraet, g.name, a.domain, a.typ, a.aktion, a.grund, a.detail, a.ms, a.cache FROM anfragen a LEFT JOIN geraete g ON g.geraet = a.geraet ${bed.length ? 'WHERE ' + bed.map((b) => 'a.' + b).join(' AND ') : ''} ORDER BY a.ts DESC LIMIT ?`,
+      werte: [...werte, Math.max(1, Math.min(500, Math.round(+limit) || 100))] };
+  }
+  eintraege(opts = {}) {
+    this.schreiben();
+    const { sql, werte } = this.eintraegeSql(opts);
+    return this.db.prepare(sql).all(...werte).map((z) => ({ ...z, aktion: AKTION_NAME[z.aktion], cache: !!z.cache }));
+  }
+  // ── Auswertungen über den Leser-Thread (für die Weboberfläche) ──
+  leserAbfrage(sql, werte, zeitlimit_ms = 30000) {
+    if (!this.leser) {
+      const w = new Worker(LESER, { eval: true, workerData: { datei: this.datei } });
+      w.unref(); this.leser = w; this.leserOffen = new Map(); this.leserId = 0;
+      const allesAb = (e) => { for (const o of this.leserOffen.values()) { clearTimeout(o.uhr); o.nein(e); } this.leserOffen.clear(); if (this.leser === w) this.leser = null; };
+      w.on('message', ({ id, zeilen, fehler }) => { const o = this.leserOffen.get(id); if (!o) return; this.leserOffen.delete(id); clearTimeout(o.uhr); fehler ? o.nein(new Error(fehler)) : o.ok(zeilen); });
+      w.on('error', allesAb); w.on('exit', () => allesAb(new Error('Leser-Thread beendet')));
+    }
+    return new Promise((ok, nein) => {
+      const id = ++this.leserId, uhr = setTimeout(() => { this.leserOffen.delete(id); nein(new Error('Auswertung dauert zu lange')); }, zeitlimit_ms);
+      uhr.unref?.(); this.leserOffen.set(id, { ok, nein, uhr }); this.leser.postMessage({ id, sql, werte });
+    });
+  }
+  /** Wie eintraege – mit Suchbegriff (Volltextsuche über alle Zeilen) im Leser-Thread */
+  async eintraegeAsync(opts = {}) {
+    if (!opts.suche) return this.eintraege(opts);
+    this.schreiben();
+    const { sql, werte } = this.eintraegeSql(opts);
+    return (await this.leserAbfrage(sql, werte)).map((z) => ({ ...z, aktion: AKTION_NAME[z.aktion], cache: !!z.cache }));
+  }
+  /** Wie topDomains – Zeiträume über einen Tag im Leser-Thread (2 min gemerkt) */
+  topDomainsAsync(opts = {}) {
+    const { aktion = 'geblockt', seit = this.jetzt() - TAG, geraet = '', limit = 15 } = opts;
+    if (this.jetzt() - seit <= TAG + STUNDE) return Promise.resolve(this.topDomains(opts));
+    const n = Math.max(1, Math.min(50, Math.round(+limit) || 15)), schluessel = `topA|${aktion}|${Math.floor(seit / STUNDE)}|${geraet}|${n}`;
+    return this.gemerkt(schluessel, 120000, () => this.leserAbfrage(`SELECT domain, COUNT(*) n, MAX(ts) zuletzt FROM anfragen WHERE aktion = ? AND ts >= ? ${geraet ? 'AND geraet = ?' : ''} GROUP BY domain ORDER BY n DESC LIMIT ?`,
+      [AKTION[aktion], seit, ...(geraet ? [geraet] : []), n]).catch((e) => { this.cache.delete(schluessel); throw e; }));
   }
   // Letzte bekannte Geräte für Geraete.vorbelegen (neueste zuerst)
   bekannteGeraete() {
@@ -192,7 +237,7 @@ class Protokoll {
     return n;
   }
   groesse() { try { return fs.statSync(this.datei).size + (fs.existsSync(this.datei + '-wal') ? fs.statSync(this.datei + '-wal').size : 0); } catch (e) { return 0; } }
-  schliessen() { this.schreiben(); clearInterval(this.schreibUhr); clearInterval(this.putzUhr); try { this.db.close(); } catch (e) {} }
+  schliessen() { this.schreiben(); clearInterval(this.schreibUhr); clearInterval(this.putzUhr); try { this.leser?.terminate(); } catch (e) {} try { this.db.close(); } catch (e) {} }
 }
 
 module.exports = { Protokoll, AKTION };

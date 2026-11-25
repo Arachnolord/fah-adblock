@@ -14,13 +14,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const net = require('net');
-const { COOKIE, LAUFZEIT } = require('../auth');
+const { COOKIE, LAUFZEIT, GERAET_COOKIE, GERAET_LAUFZEIT } = require('../auth');
 const { musterLesen } = require('../dns/filter');
-const { netz, netzliste, normIp, normDomain } = require('../netz');
+const { netz, netzliste, normIp, normDomain, listenIdOk } = require('../netz');
 const { lookup } = require('../aufloeser');
 const kinderschutz = require('../daten/kinderschutz');
 const { limitZielOk } = require('../einstellungen');
 const { neueKennung, kennungAus, KENNUNG, neuesGeheimnis } = require('../unterwegs');
+const { ALT_TEXT } = require('../spiegel');
 
 const TYPEN = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
 const SICHERHEIT = {
@@ -48,7 +49,12 @@ function webServer(k) {
   const w = () => einst.werte;
   const minuten = (m) => Math.max(0, Math.min(7 * 24 * 60, Math.round(+m || 0)));
   const grenze = (wert, vorgabe, max) => Math.max(1, Math.min(max, Math.round(+wert) || vorgabe));
-  const cookieSetzen = (req, res, wert) => res.setHeader('Set-Cookie', `${COOKIE}=${wert}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LAUFZEIT / 1000}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
+  // Sitzung + (optional) Geräte-Cookie „bekanntes Gerät“ (Anmeldebremse, K14) – beide HttpOnly, SameSite=Strict
+  const cookieSetzen = (req, res, wert, geraet = null) => {
+    const sicher = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+    res.setHeader('Set-Cookie', [`${COOKIE}=${wert}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LAUFZEIT / 1000}${sicher}`,
+      ...(geraet ? [`${GERAET_COOKIE}=${geraet}; Path=/api/anmelden; HttpOnly; SameSite=Strict; Max-Age=${GERAET_LAUFZEIT / 1000}${sicher}`] : [])]);
+  };
   // Adresse des Anfragenden für die Anmeldebremse: hinter einem vertrauten Proxy (NPM) zählt der Eintrag,
   // den der Proxy an X-Forwarded-For angehängt hat (von rechts, vertraute Proxys übersprungen) – der erste
   // Eintrag könnte vom Client selbst stammen (NPM hängt nur an).
@@ -67,14 +73,14 @@ function webServer(k) {
   // `partner` (Adresse der anderen Instanz) – damit findet die Homepage beide Instanzen, wenn sie eine kennt
   route('GET', '/api/health', () => { const sp = spiegel ? spiegel.status() : null; return { ok: true, app: 'fah-adblock', dns: dns.status().laeuft, version, rolle: sp ? sp.rolle : 'allein', letzter_abgleich: sp ? sp.letzter_abgleich : null, abgleich_fehler: sp && sp.fehler ? true : false, partner: sp ? sp.partner_url : null, adresse: sp ? sp.eigene_url : null }; }, { offen: true });
   route('POST', '/api/anmelden', async ({ req, res, body }) => {
-    const r = auth.anmelden(body.name, body.passwort, verbindung(req).client);
+    const r = auth.anmelden(body.name, body.passwort, verbindung(req).client, req.headers.cookie);
     if (r.fehler) throw new HttpFehler(401, r.fehler);
-    cookieSetzen(req, res, r.cookie);
+    cookieSetzen(req, res, r.cookie, r.geraet);
     return { ok: true, standardPasswort: r.standardPasswort };
   }, { offen: true });
   route('POST', '/api/abmelden', ({ res, nutzer }) => { if (nutzer) auth.sitzungenBeenden(nutzer.name); res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`); return { ok: true }; }, { offen: true });
   route('GET', '/api/ich', ({ nutzer }) => ({ name: nutzer.name, standardPasswort: nutzer.standardPasswort, csrf: nutzer.csrf, version, erweiterungen: erweiterungen.filter((e) => e.oberflaeche).map((e) => e.name), spiegel: spiegel ? { rolle: spiegel.rolle, haupt_url: spiegel.status().haupt_url } : null }));
-  route('POST', '/api/passwort', ({ req, res, nutzer, body }) => { const r = auth.passwortAendern(nutzer.name, body.alt, body.neu); if (r.fehler) throw new HttpFehler(400, r.fehler); cookieSetzen(req, res, r.cookie); return { ok: true }; });   // andere Sitzungen sind damit abgemeldet, diese läuft mit neuem Cookie weiter
+  route('POST', '/api/passwort', ({ req, res, nutzer, body }) => { const r = auth.passwortAendern(nutzer.name, body.alt, body.neu); if (r.fehler) throw new HttpFehler(400, r.fehler); cookieSetzen(req, res, r.cookie, r.geraet); return { ok: true }; });   // andere Sitzungen sind damit abgemeldet, diese läuft mit neuem Cookie weiter
 
   // ── Übersicht, Statistik, Live ────────────────────────────────────────────
   // Fragt FAH-Proxy vor jedem Sperrseiten-Zertifikat: nur wirklich gesperrte Domains bekommen eines
@@ -87,6 +93,7 @@ function webServer(k) {
     const jetzt = Date.now(), ls = listen.status();
     return {
       version, jetzt, kennzahlen: protokoll.kennzahlen(+q.get('stunden') || 24),
+      warnungen: [einst.warnung, auth.warnung].filter(Boolean),   // z. B. beschädigte Einstellungs-/Nutzerdatei beim Start (K7)
       erweiterungen: erweiterungen.map((e) => { try { return e.kachel ? e.kachel() : null; } catch (x) { return null; } }).filter(Array.isArray), pause: { global: w().pausen.global > jetzt ? w().pausen.global : 0 },
       dns: dns.status(), upstream: upstream.status(), geraete: geraete.status(),
       listen: { gesamt: ls.gesamt, an: ls.quellen.filter((q) => q.an).length, fehler: ls.quellen.filter((q) => q.an && q.fehler).length, laedt: ls.quellen.some((q) => q.laedt) },
@@ -102,7 +109,7 @@ function webServer(k) {
   route('GET', '/api/verlauf', ({ q }) => protokoll.verlauf(q.get('zeitraum') === '7d' ? '7d' : '24h'));
   route('GET', '/api/top', ({ q }) => {
     const stunden = Math.max(1, Math.min(720, +q.get('stunden') || 24));   // bis 30 Tage
-    return protokoll.topDomains({ aktion: q.get('aktion') === 'erlaubt' ? 'erlaubt' : 'geblockt', seit: Date.now() - stunden * 3600000, geraet: q.get('geraet') || '', limit: grenze(q.get('limit'), 15, 50) });
+    return protokoll.topDomainsAsync({ aktion: q.get('aktion') === 'erlaubt' ? 'erlaubt' : 'geblockt', seit: Date.now() - stunden * 3600000, geraet: q.get('geraet') || '', limit: grenze(q.get('limit'), 15, 50) });
   });
   route('GET', '/api/live', ({ req, res }) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no', ...SICHERHEIT });
@@ -110,7 +117,7 @@ function webServer(k) {
     const letzte = protokoll.ring.slice(-40).map(kompakt);
     res.write(`event: start\ndata: ${JSON.stringify(letzte)}\n\n`);
     live.add(res);
-    const puls = setInterval(() => res.write(': puls\n\n'), 20000);
+    const puls = setInterval(() => { if (res.writableLength > 1e6 || res.destroyed) { clearInterval(puls); live.delete(res); return res.destroy(); } res.write(': puls\n\n'); }, 20000);
     req.on('close', () => { clearInterval(puls); live.delete(res); });
     return undefined;
   });
@@ -161,7 +168,7 @@ function webServer(k) {
     return { ok: true, bis };
   });
   route('GET', '/api/rettung/:geraet', ({ p, q }) => ({ geraet: decodeURIComponent(p.geraet), eintraege: protokoll.rettung(decodeURIComponent(p.geraet), Math.max(1, Math.min(240, +q.get('minuten') || 15))) }));
-  route('GET', '/api/protokoll', ({ q }) => protokoll.eintraege({ geraet: q.get('geraet') || '', nurGeblockt: q.get('nurGeblockt') === '1', suche: q.get('suche') || '', vor: +q.get('vor') || 0, limit: grenze(q.get('limit'), 100, 500) }));
+  route('GET', '/api/protokoll', ({ q }) => protokoll.eintraegeAsync({ geraet: q.get('geraet') || '', nurGeblockt: q.get('nurGeblockt') === '1', suche: q.get('suche') || '', vor: +q.get('vor') || 0, limit: grenze(q.get('limit'), 100, 500) }));
   route('GET', '/api/pruefen', ({ q }) => {
     const domain = normDomain(q.get('domain')); pruefe(domain, 'Keine gültige Domain');
     const geraet = q.get('geraet') || '';
@@ -292,7 +299,10 @@ function webServer(k) {
     pruefe(['frei', 'listen', 'sperren'].includes(modus), 'Unbekannter Zustand');
     const geltung = String(body.geltung || 'alle');
     pruefe(geltung === 'alle' || (geltung.startsWith('profil:') && w().profile.some((x) => `profil:${x.id}` === geltung)) || (geltung.startsWith('geraet:') && geltung.length <= 72), 'Ungültiger Geltungsbereich');
-    einst.aendern((x) => { x.dienste = x.dienste || {}; if (modus === d.vorgabe && modus !== 'sperren') delete x.dienste[d.id]; else x.dienste[d.id] = modus === 'sperren' ? { modus, geltung } : { modus }; });
+    // Sperre nur für ein Profil/Gerät: alle anderen behalten ihren bisherigen Grundzustand (25.11.2026, K5 – vorher fielen sie auf „nach Listen“,
+    // ein geschützter Mediendienst wurde so für den Rest des Hauses wieder von Blocklisten entschieden)
+    const bisher = dienstKatalog.modusVon(d, w().dienste || {}), grund = bisher.modus === 'sperren' ? w().dienste?.[d.id]?.grund : bisher.modus;
+    einst.aendern((x) => { x.dienste = x.dienste || {}; if (modus === d.vorgabe && modus !== 'sperren') delete x.dienste[d.id]; else x.dienste[d.id] = modus === 'sperren' ? { modus, geltung, ...(geltung !== 'alle' && ['frei', 'listen'].includes(grund) && grund !== d.vorgabe ? { grund } : {}) } : { modus }; });
     return { ok: true };
   });
 
@@ -465,6 +475,7 @@ function webServer(k) {
     const httpUrl = (u, was) => { let x; try { x = new URL(String(u)); } catch (e) { f(`${was}: ungültige Adresse „${u}“`); } if (!['https:', 'http:'].includes(x.protocol)) f(`${was}: nur http(s)-Adressen`); return x; };
     const kategorien = new Set([...(Array.isArray(s.kategorien) ? s.kategorien : w().kategorien).map((k) => k?.id)]);
     liste('kategorien', (k) => { if (typeof k.name !== 'string') f(`Kategorie „${k.id}“ ohne Namen`); });
+    { const ids = new Set(); for (const l of Array.isArray(s.listen) ? s.listen : []) { if (l && !listenIdOk(l.id)) f(`Liste „${String(l.id).slice(0, 40)}“: ID ungültig (nur Buchstaben, Ziffern, - und _)`); if (l && ids.has(l.id)) f(`Liste „${l.id}“ doppelt`); if (l) ids.add(l.id); } }
     liste('listen', (l) => { if (String(l.url).startsWith('eingebaut:')) { if (l.url !== 'eingebaut:anonym') f(`Liste „${l.id}“: eingebaute Liste unbekannt`); } else httpUrl(l.url, `Liste „${l.id}“`); if (!kategorien.has(l.kategorie)) f(`Liste „${l.id}“: Kategorie „${l.kategorie}“ unbekannt`); });
     liste('profile', (p) => { if (typeof p.name !== 'string' || !p.name) f(`Profil „${p.id}“ ohne Namen`); if (p.kategorien !== undefined && !objekt(p.kategorien)) f(`Profil „${p.id}“: Kategorien ungültig`); for (const [kid, kw] of Object.entries(p.kategorien || {})) { if (!kategorien.has(kid)) f(`Profil „${p.id}“: Kategorie „${kid}“ unbekannt`); if (!objekt(kw) || (kw.zeitplan !== undefined && !Array.isArray(kw.zeitplan))) f(`Profil „${p.id}“: Kategorie „${kid}“ ungültig`); } if (p.dienste !== undefined && !objekt(p.dienste)) f(`Profil „${p.id}“: Dienste ungültig`); if (p.ruhezeiten !== undefined && (!objekt(p.ruhezeiten) || !Object.values(p.ruhezeiten).every(Array.isArray))) f(`Profil „${p.id}“: Ruhezeiten ungültig`); if (p.limits !== undefined && (!objekt(p.limits) || !Object.entries(p.limits).every(([z, m]) => limitZielOk(z) && Number(m) >= 5 && Number(m) <= 1440))) f(`Profil „${p.id}“: Zeitlimits ungültig`); if (p.sicher !== undefined && !objekt(p.sicher)) f(`Profil „${p.id}“: sichere Suche ungültig`); });
     if (Array.isArray(s.profile) && !s.profile.some((p) => p.id === 'standard')) f('Profil „Standard“ fehlt');
@@ -522,16 +533,16 @@ function webServer(k) {
       pruefe(body.bestaetigt === true, 'Bitte ausdrücklich bestätigen');
       try { return await spiegel.partnerKoppeln({ rolle: body.rolle, url: body.url, name: body.name, passwort: body.passwort, eigene_url: body.eigene_url }); } catch (e) { throw new HttpFehler(e.status || 502, e.message); }
     });
-    // Kinderschutz: Ereignisse und Nutzung des Ersatzes (mit Kopplungscode)
-    route('POST', '/api/spiegel/meldung', ({ req, body }) => {
-      const code = /^Bearer\s+(\S+)$/.exec(String(req.headers.authorization || ''));
-      try { return spiegel.meldungFuer(code ? code[1] : '', body); } catch (e) { throw new HttpFehler(e.status || 500, e.message); }
+    // Vom Ersatz (ohne Sitzung): signierter, verschlüsselter Umschlag – der Kopplungscode selbst geht nie über die Leitung (25.11.2026, K2).
+    // Kinderschutz: Ereignisse und Nutzung des Ersatzes → aufgebrauchte Zeitlimits und Unterwegs-Paket zurück
+    route('POST', '/api/spiegel/meldung', ({ body }) => {
+      try { return spiegel.meldungFuer(body); } catch (e) { throw new HttpFehler(e.status || 500, e.message); }
     }, { offen: true });
-    // vom Ersatz abgerufen: ohne Sitzung, mit Kopplungscode (Bearer)
-    route('GET', '/api/spiegel/stand', ({ req }) => {
-      const code = /^Bearer\s+(\S+)$/.exec(String(req.headers.authorization || ''));
-      try { return spiegel.standFuer(code ? code[1] : '', verbindung(req).client, String(req.headers['x-fah-adblock-url'] || '')); } catch (e) { throw new HttpFehler(e.status || 500, e.message); }
+    route('POST', '/api/spiegel/stand', ({ req, body }) => {
+      try { return spiegel.standFuer(body, verbindung(req).client); } catch (e) { throw new HttpFehler(e.status || 500, e.message); }
     }, { offen: true });
+    // alter Ersatz (Bearer-Code per GET) → klarer Hinweis statt Daten; 409 zählt dort als „Haupt lebt“, er übernimmt also nicht
+    route('GET', '/api/spiegel/stand', () => { throw new HttpFehler(409, ALT_TEXT); }, { offen: true });
   }
   // Am Ersatz ändert man nichts – sonst wäre es beim nächsten Abgleich wieder weg (Ausnahmen: Instanz-eigene Dinge)
   // Optionale Erweiterungen hängen ihre Routen an (gleicher Schutz: Anmeldung, CSRF, Herkunft, Ersatz nur lesend)
@@ -647,9 +658,18 @@ function symbolLaden(sid) {
   });
 }
 
+// Livestrom an alle Zuhörer (25.11.2026, K17): wer nicht mehr liest (Tab im Hintergrund hinter einem Proxy), ließ die Warteschlange bis zur
+// Speichergrenze des Containers wachsen → ab 1 MB Rückstau wird die Verbindung getrennt (EventSource verbindet sich selbst neu)
+function liveSenden(live, text, grenze = 1e6) {
+  for (const res of live) {
+    if (res.writableLength > grenze || res.destroyed) { live.delete(res); try { res.destroy(); } catch (e) {} continue; }
+    try { res.write(text); } catch (e) { live.delete(res); }
+  }
+}
+
 // Kompakte Form für den Livestrom
 function kompakt(e) {
   return { t: e.ts, g: e.geraet, n: e.geraetName, d: e.domain, y: e.typ, a: e.aktion, r: e.grund, l: e.dienst || e.listen?.[0] || e.regel || e.cname || '', k: e.kategorie || '', c: e.cache ? 1 : 0, m: e.ms };
 }
 
-module.exports = { webServer, kompakt };
+module.exports = { webServer, kompakt, liveSenden };
