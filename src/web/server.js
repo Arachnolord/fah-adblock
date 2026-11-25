@@ -185,6 +185,46 @@ function webServer(k) {
     if (macs) for (const m of macs) if (!vorher.has(m)) protokoll.zusammenfuehren?.(m, gid, 0, w().geraete[gid]?.name || '');
     return { ok: true };
   });
+  // Alle MAC-Adressen eines Geräts auf einmal (25.11.2026): die erste ist die Haupt-MAC, die übrigen „weitere MACs“. Weicht die erste von der
+  // bisherigen ID ab, zieht das Gerät um – Name, Profil, Regeln, Pausen, Dienste, Unterwegs-Eintrag (gleiches Geheimnis, DoH-Adresse bleibt) und Verlauf.
+  route('PUT', '/api/geraete/:id/macs', ({ p, body }) => {
+    const gid = decodeURIComponent(p.id), MAC = /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
+    pruefe(MAC.test(gid), 'MAC-Adressen gehen nur bei Geräten mit MAC-Adresse');
+    const roh = (Array.isArray(body.macs) ? body.macs : String(body.macs || '').split(/[\s,;]+/)).map((m) => String(m).trim()).filter(Boolean);
+    const falsch = roh.filter((m) => !MAC.test(m));
+    pruefe(!falsch.length, `Keine MAC-Adresse: ${falsch.slice(0, 2).join(', ')} (Form aa:bb:cc:dd:ee:ff)`);
+    const macs = [...new Set(roh.map((m) => m.toLowerCase().replace(/-/g, ':')))];
+    pruefe(macs.length >= 1, 'Mindestens eine MAC-Adresse (die erste ist die Haupt-MAC)');
+    pruefe(macs.length <= 6, 'Höchstens 6 MAC-Adressen je Gerät');
+    const [haupt, ...weitere] = macs, x0 = w(), alteWeitere = x0.geraete[gid]?.weitereMacs || [];
+    for (const [anderes, g] of Object.entries(x0.geraete)) {
+      if (anderes === gid || macs.includes(anderes) && !(g.weitereMacs || []).length) continue;
+      if (macs.includes(anderes)) pruefe(false, `${anderes} hat selbst weitere MAC-Adressen – dort erst entfernen`);
+      if ((g.weitereMacs || []).some((m) => macs.includes(m))) pruefe(false, `Eine MAC gehört schon zu „${g.name || geraete.nameVon(anderes) || anderes}“`);
+    }
+    if (haupt !== gid) pruefe(!x0.unterwegs?.geraete?.[haupt] || !x0.unterwegs?.geraete?.[gid], `${haupt} ist schon für unterwegs eingerichtet`);
+    const umhaengen = [gid, ...alteWeitere, ...macs].filter((m, i, a) => m !== haupt && a.indexOf(m) === i);
+    einst.aendern((x) => {
+      const g = { ...(x.geraete[haupt] || {}), ...(x.geraete[gid] || {}) };   // Einstellungen des bisherigen Geräts gehen vor
+      if (weitere.length) g.weitereMacs = weitere; else delete g.weitereMacs;
+      for (const m of umhaengen) {
+        if (m !== gid && m !== haupt) { if (!g.name && x.geraete[m]?.name) g.name = x.geraete[m].name; if (!g.profil && x.geraete[m]?.profil) g.profil = x.geraete[m].profil; }
+        if (!weitere.includes(m)) { /* bleibt erhalten: alte weitere MAC, die nicht mehr dazugehört, wird wieder eigenständig */ }
+        if (weitere.includes(m) || m === gid) delete x.geraete[m];
+        if (x.pausen.geraete[m] && (weitere.includes(m) || m === gid)) { x.pausen.geraete[haupt] = Math.max(x.pausen.geraete[haupt] || 0, x.pausen.geraete[m]); delete x.pausen.geraete[m]; }
+        if (weitere.includes(m) || m === gid) {
+          for (const r of x.regeln) if (r.geltung === `geraet:${m}`) r.geltung = `geraet:${haupt}`;
+          for (const d of Object.values(x.dienste || {})) if (d.geltung === `geraet:${m}`) d.geltung = `geraet:${haupt}`;
+        }
+      }
+      if (haupt !== gid && x.unterwegs?.geraete?.[gid]) { x.unterwegs.geraete[haupt] = x.unterwegs.geraete[gid]; delete x.unterwegs.geraete[gid]; }
+      x.geraete[haupt] = g;
+    });
+    // Verlauf: bisherige ID und neu verbundene MACs dem Gerät zuschlagen
+    for (const m of [gid, ...weitere]) if (m !== haupt && (m === gid || !alteWeitere.includes(m))) protokoll.zusammenfuehren?.(m, haupt, 0, w().geraete[haupt]?.name || '');
+    if (haupt !== gid) unterwegsWeiter?.(true);
+    return { ok: true, id: haupt, weitereMacs: weitere };
+  });
   route('POST', '/api/pause', ({ body }) => {
     pruefe(!body.geraet || String(body.geraet).length <= 64, 'Ungültige Geräte-ID');
     const m = minuten(body.minuten), bis = m ? Date.now() + m * 60000 : 0;

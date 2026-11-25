@@ -1098,6 +1098,18 @@ try {
     const ausFalsch = await sK('/api/unterwegs', { ausnahmen: 'firma.intern\nkein name!' }, 'PUT'), ausOk = await sK('/api/unterwegs', { ausnahmen: '*.Firma.Intern\ncorp.example.com, firma.intern' }, 'PUT');
     const ug = await (await sK('/api/unterwegs/geraete/kind', { an: true }, 'PUT')).json();
     const gU = ug.geraete.find((g) => g.id === 'kind');
+    { // 25.11.2026: MAC-Adressen eines Unterwegs-Geräts ändern – erste = Haupt-MAC; Umzug behält Kennung und Geheimnis (DoH-Adresse bleibt), weitere MAC verbunden
+      const alt = 'aa:bb:cc:dd:ee:e7', neu = 'aa:bb:cc:dd:ee:e6', wlan = '02:aa:bb:cc:dd:21';
+      await sK(`/api/unterwegs/geraete/${alt}`, { an: true, name: 'Reiserouter' }, 'PUT');
+      const vorher = { ...eW.werte.unterwegs.geraete[alt] };
+      const r = await sK(`/api/geraete/${alt}/macs`, { macs: `${neu.toUpperCase()}, ${wlan}` }, 'PUT'), rj = await r.json();
+      const nachher = eW.werte.unterwegs.geraete[neu], gN = eW.werte.geraete[neu];
+      const doppelt = await sK('/api/geraete/aa:bb:cc:dd:ee:99/macs', { macs: `aa:bb:cc:dd:ee:99, ${wlan}` }, 'PUT');
+      pruefe('Unterwegs: MAC-Adressen ändern – Umzug auf die neue Haupt-MAC mit gleicher Kennung und gleichem Geheimnis, Name mitgenommen, WLAN-MAC verbunden, alte ID weg; schon vergebene MAC abgelehnt',
+        r.status === 200 && rj.id === neu && nachher?.kennung === vorher.kennung && nachher?.geheim === vorher.geheim && !eW.werte.unterwegs.geraete[alt] && !eW.werte.geraete[alt] && gN?.name === 'Reiserouter' && gN?.weitereMacs?.join() === wlan && doppelt.status === 400,
+        JSON.stringify({ status: r.status, rj, gN, doppelt: doppelt.status }));
+      await sK(`/api/unterwegs/geraete/${neu}`, {}, 'DELETE'); eW.aendern((x) => { delete x.geraete[neu]; });
+    }
     { // 25.11.2026: Gerät von Hand per MAC (gerade nicht im Netz, z. B. Reiserouter): Schreibweise vereinheitlicht, Name gesetzt, kurzer Name daraus
       const r = await sK('/api/unterwegs/geraete/AA-BB-CC-DD-EE-77', { an: true, name: '  Reise   Router ' }, 'PUT'), mac = 'aa:bb:cc:dd:ee:77';
       const ugM = eW.werte.unterwegs.geraete[mac], nameM = eW.werte.geraete[mac]?.name;

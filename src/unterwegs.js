@@ -443,7 +443,7 @@ class Unterwegs {
       zaehler: this.zaehler,
       geraete: Object.entries(this.u.geraete).map(([gid, g]) => {
         const host = this.hostVon(gid), z = host ? this.zert.get(host) : null, st = host ? this.zustand.get(host) || {} : {};
-        return { id: gid, name: this.nameVon(gid), an: g.an !== false, kennung: g.kennung, host, geheim: g.geheim, zertifikatBis: z?.bis || null, fehler: st.fehler || null, wartetAufProxy: st.art === 'proxy', versucht: st.versucht || null, zuletzt: this.zuletzt.get(gid) || null };
+        return { id: gid, weitereMacs: this.einst.werte.geraete?.[gid]?.weitereMacs || [], name: this.nameVon(gid), an: g.an !== false, kennung: g.kennung, host, geheim: g.geheim, zertifikatBis: z?.bis || null, fehler: st.fehler || null, wartetAufProxy: st.art === 'proxy', versucht: st.versucht || null, zuletzt: this.zuletzt.get(gid) || null };
       }),
     };
   }

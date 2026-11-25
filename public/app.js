@@ -537,18 +537,24 @@
       if (e.target.closest('[data-rettung]')) return rettung(g);
       if (e.target.closest('[data-gpause]')) return pause(id, +e.target.closest('[data-gpause]').dataset.gpause);
       if (e.target.closest('[data-gprotokoll]')) { S.protokollGeraet = id; location.hash = 'protokoll'; return; }
-      if (e.target.closest('[data-gmacs]')) {
-        const neu = prompt(`Weitere MAC-Adressen von „${g.name}“ (z. B. WLAN und Kabel), durch Komma getrennt – leer = keine.\nAlle laufen dann unter diesem Gerät: gleiches Profil, gemeinsame Statistik.`, (g.weitereMacs || []).join(', '));
-        if (neu === null) return;
-        try { await api(`/api/geraete/${encodeURIComponent(id)}`, { methode: 'PUT', daten: { weitereMacs: neu } }); toast(neu.trim() ? 'MAC-Adressen verbunden' : 'Weitere MAC-Adressen entfernt'); zeigeGeraete(); } catch (err) { toast(err.message, 'fehler'); }
-        return;
-      }
+      if (e.target.closest('[data-gmacs]')) return macsBearbeiten(g, () => zeigeGeraete());
       if (e.target.closest('[data-umbenennen]')) {
         const name = prompt('Name für dieses Gerät (leer = automatisch)', g.eigenerName ? g.name : '');
         if (name === null) return;
         try { await api(`/api/geraete/${encodeURIComponent(id)}`, { methode: 'PUT', daten: { name } }); zeigeGeraete(); } catch (err) { toast(err.message, 'fehler'); }
       }
     };
+  }
+  // Alle MAC-Adressen eines Geräts bearbeiten (25.11.2026): die erste ist die Haupt-MAC – so lässt sich auch eine falsch eingetragene MAC ändern
+  async function macsBearbeiten(g, danach) {
+    const alle = [g.id, ...(g.weitereMacs || [])];
+    const neu = prompt(`MAC-Adressen von „${g.name}“, durch Komma getrennt – die ERSTE ist die Haupt-MAC.\nWeitere (z. B. WLAN und Kabel) laufen unter demselben Gerät: gleiches Profil, gemeinsame Statistik. Unterwegs bleibt die DoH-Adresse gleich.`, alle.join(', '));
+    if (neu === null) return;
+    try {
+      const r = await api(`/api/geraete/${encodeURIComponent(g.id)}/macs`, { methode: 'PUT', daten: { macs: neu } });
+      toast(r.id !== g.id ? `Haupt-MAC jetzt ${r.id}${r.weitereMacs.length ? ` (+${r.weitereMacs.length})` : ''}` : r.weitereMacs.length ? `${r.weitereMacs.length} weitere MAC verbunden` : 'Keine weiteren MAC-Adressen');
+      danach();
+    } catch (err) { toast(err.message, 'fehler'); }
   }
   function kurveZeichnen(cv) {
     const daten = JSON.parse(cv.dataset.kurve || '[]'), r = cv.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
@@ -996,10 +1002,10 @@
     const ersatz = S.ich?.spiegel?.rolle === 'ersatz';
     const ugZeile = (d) => {
       const zert = d.zertifikatBis ? `<span class="chip gruen">bereit · Zertifikat bis ${new Date(d.zertifikatBis).toLocaleDateString('de-DE')}</span>` : d.wartetAufProxy ? '<span class="chip">wartet auf FAH-Proxy</span>' : d.fehler ? '<span class="chip rot">Zertifikat fehlgeschlagen</span>' : '<span class="chip">Zertifikat wird geholt …</span>';
-      return `<div class="zeile umbruch block" data-uggeraet="${esc(d.id)}"><div class="haupt"><b>${esc(d.name)} ${d.an ? '' : '<span class="chip">aus</span>'} ${zert}</b><small class="mono">${esc(d.host || '– Basisdomain fehlt –')}</small>
+      return `<div class="zeile umbruch block" data-uggeraet="${esc(d.id)}"><div class="haupt"><b>${esc(d.name)} ${d.an ? '' : '<span class="chip">aus</span>'} ${zert}</b><small class="mono">${esc(d.host || '– Basisdomain fehlt –')}</small>${/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(d.id) ? `<small class="mono">MAC ${esc(d.id)}${d.weitereMacs?.length ? ` · 🔗 +${d.weitereMacs.length}` : ''}</small>` : ''}
         ${!d.zertifikatBis && d.wartetAufProxy ? `<small>${u.proxy?.gekoppelt ? 'FAH-Proxy-Eintrag ist angelegt – FAH-Proxy holt gerade das Zertifikat (meist 1–2 Minuten; ist das Let’s-Encrypt-Kontingent für die Domain erschöpft, nimmt es ZeroSSL, das kann ein paar Minuten länger dauern). FAH-Adblock sieht jede Minute nach.' : 'Noch nicht erreichbar – oben FAH-Proxy koppeln, dann legt FAH-Adblock den Eintrag selbst an.'}</small>` : d.fehler && !d.zertifikatBis ? `<small style="color:var(--block)">${esc(d.fehler)}</small>` : ''}<small>${d.zuletzt ? `zuletzt ${d.zuletzt.extern ? 'unterwegs' : 'zu Hause'} über ${esc(d.zuletzt.art)} · ${vor(d.zuletzt.ts)}` : 'noch nie unterwegs gefragt'}</small></div>
         <div class="knopfreihe"><button class="knopf klein leise" data-ugandroid>🤖 Android</button><button class="knopf klein leise" data-ugiphone title="Profil für iPhone, iPad und Mac">🍏 Apple</button><button class="knopf klein leise" data-ugmikrotik title="Einrichtungsdatei für einen MikroTik-Router, z. B. den Reiserouter">📡 MikroTik</button>
-          <button class="knopf klein leise" data-ugname title="Kurzen Namen wählen, z. B. fairphone">✏️ Name</button><button class="knopf klein leise" data-ugschalten>${d.an ? 'Ausschalten' : 'Einschalten'}</button><button class="knopf klein leise" data-ugneu title="Neues Geheimnis für das iPhone-Profil (z. B. Gerät verloren) – der Name bleibt">Neu ausstellen</button><button class="knopf klein leise" data-ugweg aria-label="Entfernen">✕</button></div></div>`;
+          <button class="knopf klein leise" data-ugname title="Kurzen Namen wählen, z. B. fairphone">✏️ Name</button>${/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(d.id) ? '<button class="knopf klein leise" data-ugmacs title="MAC-Adressen dieses Geräts ändern oder ergänzen (z. B. Kabel und WLAN)">🔗 MACs</button>' : ''}<button class="knopf klein leise" data-ugschalten>${d.an ? 'Ausschalten' : 'Einschalten'}</button><button class="knopf klein leise" data-ugneu title="Neues Geheimnis für das iPhone-Profil (z. B. Gerät verloren) – der Name bleibt">Neu ausstellen</button><button class="knopf klein leise" data-ugweg aria-label="Entfernen">✕</button></div></div>`;
     };
     const ohneUnterwegs = g.geraete.filter((x) => !u?.geraete.some((d) => d.id === x.id) && !String(x.id).startsWith('ip:'));
     // Auch Geräte, die gerade nicht im Netz sind (UniFi kennt sie noch) – und notfalls von Hand per MAC (25.11.2026: Reiserouter unterwegs)
@@ -1058,6 +1064,7 @@
           [...(fern ? [{ text: '📋 Link kopieren', art: 'gruen', fn: () => navigator.clipboard?.writeText(fern).then(() => toast('Link kopiert – jetzt ans iPhone schicken'), () => toast(fern)) }] : []),
             { text: '⬇️ Profil hier laden', fn: () => { location.href = lokal; } }]);
       }
+      if (e.target.closest('[data-ugmacs]')) return macsBearbeiten(d, () => zeigeUnterwegs());
       if (e.target.closest('[data-ugmikrotik]')) {
         const datei = `/unterwegs/${encodeURIComponent(d.geheim)}/reiserouter.rsc`, doh = d.host ? `https://${d.host}/dns-query/${d.geheim}` : '';
         return hinweisDialog(`📡 MikroTik: ${d.name}`, `<p style="margin:0 0 8px">Für einen MikroTik-Router mit RouterOS 7, z. B. den <b>Reiserouter</b>: Er schickt dann alle Namensanfragen verschlüsselt an FAH-Adblock und filtert mit dem Profil dieses Geräts. Eigene Werbelisten auf dem Router braucht es dann nicht mehr.</p>
