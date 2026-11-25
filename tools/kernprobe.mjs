@@ -1083,6 +1083,12 @@ try {
     const doh = await mitHost(`/dns-query/${gU.geheim}?dns=${dohQ}`), dohFalsch = await mitHost(`/dns-query/${'x'.repeat(32)}?dns=${dohQ}`);
     const dohPost = await mitHost(`/dns-query/${gU.geheim}`, { method: 'POST', headers: { 'content-type': 'application/dns-message' }, body: Buffer.from(frage('web.whatsapp.com', 'A', { id: 0 })) });
     const prof = await mitHost(`/unterwegs/${gU.geheim}/profil.mobileconfig`);
+    { // 25.11.2026: MikroTik-Einrichtungsdatei (Reiserouter) – DoH-Adresse des Geräts als lesbare Zeile + RouterOS-Befehl; falsches Geheimnis 404
+      const rsc = await mitHost(`/unterwegs/${gU.geheim}/reiserouter.rsc`), rscFalsch = await mitHost(`/unterwegs/${'y'.repeat(32)}/reiserouter.rsc`), text = rsc.buf?.toString() || '';
+      const url = `https://${hostU}/dns-query/${gU.geheim}`;
+      pruefe('Unterwegs: MikroTik-Datei nur ASCII mit „# fah-adblock-doh: <Adresse>“ und /ip dns set use-doh-server=… verify-doh-cert=yes, als Download, nicht zwischengespeichert; falsches Geheimnis 404',
+        rsc.status === 200 && /^text\/plain/.test(rsc.typ || '') && text.includes(`# fah-adblock-doh: ${url}\n`) && text.includes(`/ip dns set use-doh-server="${url}" verify-doh-cert=yes`) && rscFalsch.status === 404 && !/[\r$`\\]/.test(text.replace(/^#.*$/gm, '')) && /^[\x0a\x20-\x7e]*$/.test(text),
+        JSON.stringify({ status: rsc.status, typ: rsc.typ, falsch: rscFalsch.status })); }
     acmeW.herausforderungen.set('probetoken123', 'probetoken123.abc');
     const ch = await mitHost('/.well-known/acme-challenge/probetoken123');
     pruefe('Unterwegs: unter dem Gerätenamen keine Oberfläche, API oder Anmeldung (404); DoH GET/POST filtert mit dem Profil des Geräts; falsches Geheimnis 404', hostU === 'dns-kind.example.org' && ui.status === 404 && api.status === 404 && anm.status === 404 && doh.status === 200 && doh.typ === 'application/dns-message' && dnsPacket.decode(doh.buf).answers[0]?.data === '0.0.0.0' && dohFalsch.status === 404 && dohPost.status === 200 && dnsPacket.decode(dohPost.buf).answers.length > 0);

@@ -558,6 +558,19 @@ function webServer(k) {
     res.writeHead(200, { 'Content-Type': 'application/x-apple-aspen-config', 'Content-Disposition': `attachment; filename="fah-adblock-${unterwegs.u.geraete[gid].kennung}.mobileconfig"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     return res.end(xml);
   };
+  const mikrotikSenden = (res, geheim) => {
+    const gid = unterwegs?.geraetVonGeheimnis(geheim), text = gid && unterwegs.mikrotik ? unterwegs.mikrotik(gid) : null;
+    if (!text) return nurText(res, 404, 'Nicht gefunden');
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': `attachment; filename="fah-adblock-${unterwegs.u.geraete[gid].kennung}.rsc"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    return res.end(text);
+  };
+  // Profil (Apple) oder Einrichtungsdatei (MikroTik) eines Unterwegs-Geräts – das Geheimnis im Pfad ist der Zugang
+  const unterwegsDatei = (req, res, url) => {
+    const m = /^\/unterwegs\/([A-Za-z0-9_-]{20,64})\/(profil\.mobileconfig|reiserouter\.rsc)$/.exec(url.pathname);
+    if (!m || req.method !== 'GET') return false;
+    (m[2] === 'reiserouter.rsc' ? mikrotikSenden : profilSenden)(res, m[1]);
+    return true;
+  };
   async function geraeteHost(req, res, url, host) {
     const acmeTreffer = /^\/\.well-known\/acme-challenge\/([A-Za-z0-9_-]{8,128})$/.exec(url.pathname);
     if (acmeTreffer && req.method === 'GET') { const a = acme?.antwort(acmeTreffer[1]); return a ? nurText(res, 200, a) : nurText(res, 404, 'Nicht gefunden'); }
@@ -567,8 +580,7 @@ function webServer(k) {
       if (!gid || unterwegs.geraetVonHost(host) !== gid) return nurText(res, 404, 'Nicht gefunden');
       return unterwegs.doh(req, res, gid, verbindung(req).client);
     }
-    const prof = /^\/unterwegs\/([A-Za-z0-9_-]{20,64})\/profil\.mobileconfig$/.exec(url.pathname);
-    if (prof && req.method === 'GET') return profilSenden(res, prof[1]);
+    if (unterwegsDatei(req, res, url) !== false) return;
     return nurText(res, 404, 'Nicht gefunden');
   }
   // Jede Anfrage läuft in `bearbeiten`; was dort trotzdem entkommt, fängt der `.catch` – eine unbehandelte Ablehnung beendete
@@ -585,8 +597,7 @@ function webServer(k) {
       try { url = new URL(req.url, 'http://x'); } catch (e) { throw new HttpFehler(400, 'Ungültige Adresse'); }
       const host = String(req.headers.host || '').toLowerCase().split(':')[0];
       if (unterwegs && unterwegs.istHost(host)) return await geraeteHost(req, res, url, host);
-      const prof = /^\/unterwegs\/([A-Za-z0-9_-]{20,64})\/profil\.mobileconfig$/.exec(url.pathname);
-      if (prof && req.method === 'GET') return profilSenden(res, prof[1]);
+      if (unterwegsDatei(req, res, url) !== false) return;
       if (url.pathname.startsWith('/api/')) {
         const r = routen.find((x) => x.methode === req.method && x.re.test(url.pathname));
         if (!r) throw new HttpFehler(404, 'Unbekannte Adresse');

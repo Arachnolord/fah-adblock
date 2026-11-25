@@ -399,6 +399,21 @@ class Unterwegs {
 </plist>
 `;
   }
+  /** MikroTik RouterOS 7 (z. B. der Reiserouter): DoH zu FAH-Adblock über den Gerätenamen (25.11.2026). Die Zeile „# fah-adblock-doh: …“
+   *  ist zum sicheren Auslesen beim Hochladen gedacht (Datei NICHT als Skript ausführen müssen); die letzte Zeile ist der Befehl für Hand-Import. */
+  mikrotik(gid) {
+    const g = this.u.geraete[gid], host = this.hostVon(gid);
+    if (!g || !host || !/^[A-Za-z0-9_-]{20,64}$/.test(String(g.geheim || ''))) return null;
+    const url = `https://${host}/dns-query/${g.geheim}`, name = String(this.nameVon(gid) || gid).replace(/[^A-Za-z0-9 ._()-]/g, '').slice(0, 60);
+    // Nur ASCII: RouterOS verträgt beim /import keine Umlaute/typografischen Zeichen zuverlässig
+    return ['# FAH-Adblock - verschluesseltes DNS (DoH) fuer MikroTik RouterOS 7',
+      `# Geraet in FAH-Adblock: ${name}`,
+      '# Enthaelt ein Geheimnis - wie ein Passwort behandeln. "Neu ausstellen" in FAH-Adblock macht diese Datei ungueltig.',
+      '# Ohne Verbindung zu FAH-Adblock loest der Router keine Namen auf - unterwegs einen Rueckfall vorsehen.',
+      '# Voraussetzung: der Router loest den Namen unten per normalem DNS auf und vertraut Lets-Encrypt-/ZeroSSL-Zertifikaten.',
+      `# fah-adblock-doh: ${url}`,
+      `/ip dns set use-doh-server="${url}" verify-doh-cert=yes`, ''].join('\n');
+  }
   starten() {
     this.dotPruefen();
     this.timer = setInterval(() => { this.dotPruefen(); this.zertifikatePflegen().catch(() => {}); if (this.istErsatz() && this.uebernommen()) this.freigabenPflegen().catch(() => {}); }, 10 * 60000);
