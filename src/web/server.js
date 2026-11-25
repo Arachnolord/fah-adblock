@@ -41,9 +41,12 @@ function webServer(k) {
     const namen = [], re = new RegExp('^' + muster.replace(/:([a-z]+)/g, (_, n) => { namen.push(n); return '([^/]+)'; }) + '$');
     routen.push({ methode, re, namen, fn, offen });
   };
-  const koerper = (req) => new Promise((ok, nein) => {
-    let t = ''; req.on('data', (d) => { t += d; if (t.length > 2e6) { nein(new HttpFehler(413, 'Anfrage zu groß')); req.destroy(); } });
-    req.on('end', () => { if (!t) return ok({}); try { ok(JSON.parse(t)); } catch (e) { nein(new HttpFehler(400, 'Ungültiges JSON')); } });
+  const spiegelLaufend = new Map();   // Absender → offene Spiegel-Anfragen (Lesephase)
+  const koerper = (req, max = 2e6, frist = 20000) => new Promise((ok, nein) => {
+    if (Number(req.headers['content-length'] || 0) > max) { nein(new HttpFehler(413, 'Anfrage zu groß')); req.resume(); return; }   // gar nicht erst lesen
+    const uhr = setTimeout(() => { nein(new HttpFehler(408, 'Anfrage zu langsam')); req.destroy(); }, frist); uhr.unref?.();   // Lesefrist gegen Schleich-Clients
+    let t = ''; req.on('data', (d) => { t += d; if (t.length > max) { clearTimeout(uhr); nein(new HttpFehler(413, 'Anfrage zu groß')); req.destroy(); } });
+    req.on('end', () => { clearTimeout(uhr); if (!t) return ok({}); try { ok(JSON.parse(t)); } catch (e) { nein(new HttpFehler(400, 'Ungültiges JSON')); } });
     req.on('error', nein);
   });
   const w = () => einst.werte;
@@ -698,7 +701,13 @@ function webServer(k) {
         const m = r.re.exec(url.pathname), p = Object.fromEntries(r.namen.map((n, i) => [n, m[i + 1]]));
         // Prototype-Pollution: Pfadteile wie __proto__ werden als Objektschlüssel benutzt (Geräte, Dienste, Profile)
         if (Object.values(p).some((x) => { try { return ['__proto__', 'constructor', 'prototype'].includes(decodeURIComponent(x)); } catch (e) { return true; } })) throw new HttpFehler(400, 'Ungültige Adresse');
-        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await koerper(req) : {};
+        // Austausch Ersatz → Haupt darf größer sein (verschlüsselt; Zeitkonto-Altpakete bis 1,5 MB samt Meldungen, Codex R4-003), sonst 2 MB. Die Signatur
+        // prüft der Haupt erst NACH dem Lesen – deshalb vorher: Content-Length-Abbruch, Lesefrist und höchstens 2 gleichzeitige Spiegel-Anfragen je Absender
+        const spiegelRoute = r.offen && url.pathname.startsWith('/api/spiegel/'), absender = spiegelRoute ? verbindung(req).client : '';
+        if (spiegelRoute) { const n = spiegelLaufend.get(absender) || 0; if (n >= 2) throw new HttpFehler(429, 'Zu viele gleichzeitige Anfragen'); spiegelLaufend.set(absender, n + 1); }
+        let body;
+        try { body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await koerper(req, url.pathname === '/api/spiegel/meldung' ? 8e6 : 2e6) : {}; }
+        finally { if (spiegelRoute) { const n = (spiegelLaufend.get(absender) || 1) - 1; if (n > 0) spiegelLaufend.set(absender, n); else spiegelLaufend.delete(absender); } }
         const ergebnis = await r.fn({ req, res, p, q: url.searchParams, body, nutzer });
         if (ergebnis === undefined) return;
         const text = JSON.stringify(ergebnis);

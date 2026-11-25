@@ -86,14 +86,28 @@ class Zeitkonto {
       // in Pakete von höchstens ~50 KB teilen (je Gerät höchstens 50 Ziele → ein Gerät passt immer in ein Paket), Codex R-R7-011
       let stueck = {}, groesse = 0;
       const weg = () => { if (Object.keys(stueck).length) aus.push({ lauf: crypto.randomBytes(12).toString('base64url'), tag: z.tag, daten: stueck }); stueck = {}; groesse = 0; };
-      for (const [gid, ziele] of Object.entries(this.delta)) { const g = JSON.stringify({ [gid]: ziele }).length; if (groesse && groesse + g > 50000) weg(); stueck[gid] = ziele; groesse += g; }
+      // höchstens 500 Geräte je Paket – mehr liest annehmen() nicht (Codex R4-002)
+      for (const [gid, ziele] of Object.entries(this.delta)) { const g = JSON.stringify({ [gid]: ziele }).length; if (groesse && (groesse + g > 50000 || Object.keys(stueck).length >= 500)) weg(); stueck[gid] = ziele; groesse += g; }
       weg(); this.delta = {}; this.geaendert = true;
     }
     // Unbestätigte Pakete NIE still verwerfen (Codex-Nachprüfung R4): im 2-min-Takt sind das höchstens ~720 am Tag, danach gilt ein neuer Tag
     z.ausstehend = aus.filter((p) => p.tag === z.tag);
     if (z.ausstehend.length > 1000 && !this.warnte) { this.warnte = true; console.warn(`[zeitkonto] ${z.ausstehend.length} unbestätigte Pakete – der Haupt bestätigt seit Langem nicht`); }
+    // Altlast (Codex R-R7-013/R4-001): Ein Paket über 1 500 000 Bytes JSON ergibt verschlüsselt (Base64 = 4/3) mehr als die 2 000 000 Zeichen, die der Haupt
+    // je Anfrage annimmt → wurde mit Sicherheit nie gezählt → gefahrlos in Teile mit eigener Kennung zerlegen. Alles darunter behält seine Kennung (sonst
+    // Doppelzählung, falls nur die Antwort verloren ging) und geht notfalls allein. Danach füllen weitere Pakete bis maxZeichen auf.
+    const HART = 1500000;
+    z.ausstehend = z.ausstehend.flatMap((p) => {
+      if (Buffer.byteLength(JSON.stringify(p)) <= HART) return [p];
+      const teile = []; let stueck = {}, g = 0;
+      for (const [gid, ziele] of Object.entries(p.daten || {})) { const n = JSON.stringify({ [gid]: ziele }).length; if (g && (g + n > 50000 || Object.keys(stueck).length >= 500)) { teile.push(stueck); stueck = {}; g = 0; } stueck[gid] = ziele; g += n; }
+      if (Object.keys(stueck).length) teile.push(stueck);
+      this.geaendert = true;
+      // Kennung aus Hash der GANZEN alten Kennung + Teilnummer (kollisionssicher, passt zu /^[A-Za-z0-9_-]{8,64}$/)
+      return teile.map((daten, i) => ({ lauf: `t${crypto.createHash('sha256').update(`${p.lauf}|${i}`).digest('base64url').slice(0, 40)}`, tag: p.tag, daten }));
+    });
     const teil = []; let groesse = 0;
-    for (const p of z.ausstehend) { const g = Buffer.byteLength(JSON.stringify(p)) + 1; if (groesse + g + 2 > maxZeichen) break; teil.push(p); groesse += g; }   // Bytes inkl. Komma/Klammern; nie über dem Budget
+    for (const p of z.ausstehend) { const g = Buffer.byteLength(JSON.stringify(p)) + 1; if (teil.length && groesse + g + 2 > maxZeichen) break; teil.push(p); groesse += g; }   // Bytes inkl. Komma/Klammern
     return teil;
   }
   /** Ersatz: vom Haupt bestätigte Pakete streichen */
@@ -113,7 +127,7 @@ class Zeitkonto {
       if (p.tag !== z.tag || Object.hasOwn(gesehen, p.lauf)) continue;
       gesehen[p.lauf] = ts;
       // Geräte-IDs des Ersatzes auf das Hauptgerät abbilden (weitere MAC-Adressen, Codex R-R3-010)
-      const daten = {}; for (const [gid, ziele] of Object.entries(p.daten && typeof p.daten === 'object' ? p.daten : {}).slice(0, 500)) { let k = gid; try { k = kanonisch(gid) || gid; } catch (e) {} daten[k] = { ...(daten[k] || {}), ...Object.fromEntries(Object.entries(ziele || {}).map(([z, ms]) => [z, ((daten[k] || {})[z] || 0) + (Number(ms) || 0)])) }; }
+      const daten = {}; for (const [gid, ziele] of Object.entries(p.daten && typeof p.daten === 'object' ? p.daten : {}).slice(0, 25000)) { let k = gid; try { k = kanonisch(gid) || gid; } catch (e) {} daten[k] = { ...(daten[k] || {}), ...Object.fromEntries(Object.entries(ziele || {}).map(([z, ms]) => [z, ((daten[k] || {})[z] || 0) + (Number(ms) || 0)])) }; }
       this.hinzufuegen(daten, ts);
     }
     const ids = Object.keys(gesehen); if (ids.length > 5000) for (const id of ids.slice(0, ids.length - 5000)) delete gesehen[id];
@@ -140,7 +154,7 @@ class Zeitkonto {
   }
   hinzufuegen(nutzung, ts = this.jetzt()) {
     if (!nutzung || typeof nutzung !== 'object') return;
-    for (const [gid, ziele] of Object.entries(nutzung).slice(0, 500)) {
+    for (const [gid, ziele] of Object.entries(nutzung).slice(0, 25000)) {   // signierte Pakete des Ersatzes: großzügig (Codex R4-002)
       if (!schluesselOk(gid) || !ziele || typeof ziele !== 'object') continue;
       const g = this.eintrag(gid);
       for (const [ziel, ms] of Object.entries(ziele).slice(0, 50)) {
@@ -163,7 +177,7 @@ class Zeitkonto {
   uebernehmenFremd(liste) {
     this.fremd = {};
     if (!liste || typeof liste !== 'object') return;
-    for (const [gid, ziele] of Object.entries(liste).slice(0, 500)) if (schluesselOk(gid) && Array.isArray(ziele)) this.fremd[gid] = ziele.filter((z) => typeof z === 'string').slice(0, 50);
+    for (const [gid, ziele] of Object.entries(liste).slice(0, 25000)) if (schluesselOk(gid) && Array.isArray(ziele)) this.fremd[gid] = ziele.filter((z) => typeof z === 'string').slice(0, 50);
   }
   speichern() {
     if (!this.datei || !this.geaendert) return;

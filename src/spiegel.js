@@ -93,7 +93,8 @@ function spiegelAnfrage(url, pfad, code, daten, { zeitlimit_ms = 10000, eigene =
     let u; try { u = new URL(pfad, url); } catch (e) { return nein(new Error('Adresse des Haupts ungültig')); }
     const { umschlag, oeffnen } = umschlagBauen(schluesselVonCode(code), pfad, daten, eigene, jetzt);
     const mod = u.protocol === 'https:' ? https : http, text = JSON.stringify(umschlag);
-    const req = mod.request(u, { method: 'POST', headers: { 'User-Agent': 'FAH-Adblock-Ersatz', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) }, timeout: zeitlimit_ms, rejectUnauthorized: false }, (res) => {
+    // agent:false = frische Verbindung je Anfrage: alle 2 min eine ruhende Keep-Alive-Verbindung wiederzuverwenden, die der Haupt gerade schließt, gab ECONNRESET
+    const req = mod.request(u, { method: 'POST', agent: false, headers: { 'User-Agent': 'FAH-Adblock-Ersatz', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) }, timeout: zeitlimit_ms, rejectUnauthorized: false }, (res) => {
       const nein0 = nein; nein = (e) => nein0(Object.assign(e, { antwort: true }));   // der Haupt läuft – er hat geantwortet
       let t = ''; res.setEncoding('utf8');
       res.on('data', (d) => { t += d; if (t.length > max) req.destroy(new Error('Antwort zu groß')); });
@@ -116,7 +117,7 @@ function spiegelAnfrage(url, pfad, code, daten, { zeitlimit_ms = 10000, eigene =
 /** Stand des Haupts holen (Ersatz). `eigene` = Adresse dieses Ersatzes (der Haupt merkt sie sich). */
 const holen = (url, code, zeitlimit_ms = 10000, eigene = '') => spiegelAnfrage(url, '/api/spiegel/stand', code, undefined, { zeitlimit_ms, eigene });
 /** Meldungen, Zeitkonto, „zuletzt gesehen“ an den Haupt (Ersatz) → Antwort des Haupts */
-const senden = (url, code, daten, zeitlimit_ms = 10000) => spiegelAnfrage(url, '/api/spiegel/meldung', code, daten || {}, { zeitlimit_ms, max: 1e6 });
+const senden = (url, code, daten, zeitlimit_ms = 20000) => spiegelAnfrage(url, '/api/spiegel/meldung', code, daten || {}, { zeitlimit_ms, max: 8e6 });   // Antwort so groß wie die Anfrage sein darf
 
 /** Bei der Oberfläche des Partners anmelden → {anfrage(methode, pfad, daten)} mit Sitzungscookie und CSRF. */
 async function partnerAnmelden(basis, name, passwort, zeitlimit_ms = 30000) {
@@ -191,7 +192,7 @@ class Spiegel {
     if (this.rolle !== 'haupt') f(409, 'Diese Instanz ist kein Haupt');
     if (!u || typeof u !== 'object' || u.v !== 2) f(409, ALT_TEXT);
     if (!Number.isFinite(u.ts) || typeof u.n !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(u.n) || typeof u.k !== 'string' || u.k.length > 200 || typeof u.s !== 'string' || u.s.length > 100
-      || (u.url !== undefined && (typeof u.url !== 'string' || u.url.length > 300)) || (u.daten !== undefined && (typeof u.daten !== 'string' || u.daten.length > 4e6))) f(400, 'Anfrage des Ersatzes ungültig');
+      || (u.url !== undefined && (typeof u.url !== 'string' || u.url.length > 300)) || (u.daten !== undefined && (typeof u.daten !== 'string' || u.daten.length > 7.5e6))) f(400, 'Anfrage des Ersatzes ungültig');
     const K = this.schluesselHaupt();
     if (K.length !== 32 || !gleich(signatur(K, pfad, u), u.s)) f(401, 'Kopplungscode falsch');
     // erst NACH gültiger Signatur: Zeitfenster und Wiederholung (sonst könnte ein Fremder den Nonce-Speicher füllen)

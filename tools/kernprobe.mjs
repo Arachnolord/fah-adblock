@@ -914,9 +914,35 @@ try {
       const zk3 = new Zeitkonto({ jetzt: () => u2, zeitzone: 'Europe/Berlin' }); const tag3 = zz.heute().tag;
       zk3.annehmen([{ lauf: 'lauf-kanon-0001', tag: tag3, daten: { 'wlan-mac': { 'dienst:tiktok': 120000 }, haupt: { 'dienst:tiktok': 60000 } } }], u2, (gid) => (gid === 'wlan-mac' ? 'haupt' : gid));
       const r8 = zk3.genutztMin('haupt', 'dienst:tiktok') === 3 && zk3.genutztMin('wlan-mac', 'dienst:tiktok') === 0;
-      const r7 = r8 && teil1.length > 0 && teil1.length < 40 && groesse1 <= 1500 + 200 && teil2.length > 0 && teil2[0].lauf !== teil1[0].lauf && zz.abholen().length === 40 - teil1.length;
+      // R-R7-013/R4: Altpaket über 1,5 MB (nie annehmbar) wird in Teile ≤ 500 Geräte zerlegt; kleines Paket dahinter bleibt; Ende-zu-Ende kommt ALLES an
+      const zk4 = new Zeitkonto({ jetzt: () => u2, zeitzone: 'Europe/Berlin' }), zkH4 = new Zeitkonto({ jetzt: () => u2, zeitzone: 'Europe/Berlin' }), tag4 = zk4.heute().tag, gross = {};
+      for (let i = 0; i < 20000; i++) gross[`geraet-${i}`] = { 'dienst:tiktok': 60000, 'rubrik:spiele': 60000, 'dienst:roblox': 60000 };
+      const mittel = {}; for (let i = 0; i < 2000; i++) mittel[`m-${i}`] = { 'dienst:tiktok': 60000 };   // < 1,5 MB: behält seine Kennung
+      zk4.heute().ausstehend = [{ lauf: 'altpaket-gross-01', tag: tag4, daten: gross }, { lauf: 'altpaket-mittel-1', tag: tag4, daten: mittel }, { lauf: 'kleines-paket-02', tag: tag4, daten: { x: { 'dienst:tiktok': 60000 } } }];
+      let runden = 0, maxGeraete = 0;
+      for (; runden < 200; runden++) { const teil = zk4.abholen(); if (!teil.length) break; maxGeraete = Math.max(maxGeraete, ...teil.map((p) => Object.keys(p.daten).length)); zk4.bestaetigen(zkH4.annehmen(teil)); }
+      const angekommen = Object.keys(zkH4.heute().geraete).length, ids = Object.keys(zkH4.heute().gesehen || {});
+      const r9 = angekommen === 20000 + 2000 + 1 && maxGeraete <= 2000 && ids.includes('altpaket-mittel-1') && !ids.includes('altpaket-gross-01') && ids.filter((x) => /^t[A-Za-z0-9_-]{40}$/.test(x)).length > 1 && zk4.abholen().length === 0;
+      // R4-REV-002: zwei Altpakete mit gleichem 55-Zeichen-Anfang bekommen trotzdem verschiedene Teil-Kennungen
+      const zk5 = new Zeitkonto({ jetzt: () => u2, zeitzone: 'Europe/Berlin' }), tag5 = zk5.heute().tag;
+      zk5.heute().ausstehend = [{ lauf: 'A'.repeat(55) + '1', tag: tag5, daten: gross }, { lauf: 'A'.repeat(55) + '2', tag: tag5, daten: gross }];
+      zk5.abholen(); const ids5 = zk5.heute().ausstehend.map((p) => p.lauf);
+      const r10 = ids5.length > 4 && new Set(ids5).size === ids5.length;
+      const r7 = r8 && r9 && r10 && teil1.length > 0 && teil1.length < 40 && groesse1 <= 1500 + 200 && teil2.length > 0 && teil2[0].lauf !== teil1[0].lauf && zz.abholen().length === 40 - teil1.length;
       pruefe('Zeitkonto (R3/R4/R7): Zusammenführen bei MAC-Umzug übernimmt Minuten, Zusatzzeit, „aufgebraucht“ und Delta; 40 unbestätigte Pakete bleiben alle erhalten (vorher nur 30) und gehen in Teilen unter der Größengrenze', r3 && r4 && r7, JSON.stringify({ r3, r4, r7, anzahl: zz.abholen().length }));
     }
+  }
+  {
+    // Codex R4-003: Grenzfall über den echten Weg (Signatur, Verschlüsselung, HTTP): Altpaket knapp unter 1,5 MB + 500 Meldungen kommt an und wird bestätigt
+    const { senden: spSenden } = require('../src/spiegel.js');
+    const gross = {}; let n = 0; while (JSON.stringify(gross).length < 1480000) gross[`geraet-${n++}`] = { 'dienst:tiktok': 60000, 'rubrik:spiele': 60000 };
+    const meld = Array.from({ length: 500 }, (_, i) => ({ ts: Date.now(), titel: `Meldung ${i} ` + 'x'.repeat(150), geraet: 'g', art: 'kategorie' }));
+    let angekommen = null; H.sp.austausch = { empfangen: (d) => { angekommen = { pakete: (d.nutzung || []).length, geraete: Object.keys(d.nutzung?.[0]?.daten || {}).length, meldungen: d.meldungen?.ereignisse?.length }; return { nutzungBestaetigt: (d.nutzung || []).map((p) => p.lauf) }; } };
+    const antw = await spSenden(H.basis, spCode, { meldungen: { ereignisse: meld }, nutzung: [{ lauf: 'altpaket-grenze-1', tag: 'x', daten: gross }] }, 30000).then((a) => a, (e) => ({ fehler: e.message }));
+    H.sp.austausch = null;
+    // R4-REV-003: offene Spiegel-Route liest nicht, wenn Content-Length über der Grenze liegt (vor jeder Signaturprüfung)
+    const zuGross = await new Promise((ok) => { const rq = http.request(H.basis + '/api/spiegel/meldung', { method: 'POST', agent: false, headers: { 'Content-Type': 'application/json', 'Content-Length': 9000000 } }, (res) => { res.resume(); ok(res.statusCode); rq.destroy(); }); rq.on('error', (e) => ok(`Fehler ${e.code}`)); rq.write('{'); });
+    pruefe('Spiegel (R4-003): Austausch mit 1,48-MB-Altpaket + 500 Meldungen geht verschlüsselt durch (signierte Route bis 8 MB) und wird bestätigt; Content-Length über 8 MB → 413 ohne Lesen', antw?.nutzungBestaetigt?.[0] === 'altpaket-grenze-1' && angekommen?.geraete === n && angekommen?.meldungen === 500 && zuGross === 413, JSON.stringify({ antw: antw?.fehler || antw?.nutzungBestaetigt, angekommen, n, zuGross }));
   }
   H.sp.hauptWerden(); const spAlt = await E.sp.abgleichen();
   pruefe('Spiegel: neuer Code am Haupt → Ersatz meldet den Fehler, behält seinen Stand', /Kopplungscode/.test(spAlt.fehler || '') && E.ei.werte.regeln.some((r) => r.id === 'r-spaeter'));
