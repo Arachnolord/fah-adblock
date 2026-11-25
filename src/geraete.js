@@ -156,7 +156,7 @@ class Geraete {
       if (!u?.mac || u.quelle !== 'unifi') continue;
       this.ohneMac.delete(ip);
       const seit = Math.max(u.verbunden || 0, this.jetzt() - 24 * 3600000);
-      try { this.onZuordnung({ von: `ip:${ip}`, nach: u.mac, name: u.name, ip, seit }); } catch (e) { this.protokoll(`Zuordnung ${ip}: ${e.message}`); }
+      try { this.onZuordnung({ von: `ip:${ip}`, nach: this.haupt(u.mac), name: u.name, ip, seit }); } catch (e) { this.protokoll(`Zuordnung ${ip}: ${e.message}`); }
     }
   }
   // Unbekannte IP: UniFi gleich fragen statt bis zu 5 min zu warten
@@ -181,11 +181,20 @@ class Geraete {
     s.on('error', () => { try { s.close(); } catch (e) {} });
     s.send(dnsPacket.encode({ type: 'query', id: Math.floor(Math.random() * 65535), flags: dnsPacket.RECURSION_DESIRED, questions: [{ type: 'PTR', name }] }), 53, gw);
   }
+  /** Weitere MAC-Adressen eines Geräts (Einstellung weitereMacs, z. B. Kabel + WLAN des Reiserouters, 25.11.2026) → ID des Hauptgeräts, sonst die ID selbst */
+  haupt(id) {
+    const e = this.eigene();
+    if (e !== this.aliasQuelle) {
+      this.aliasQuelle = e; this.alias = new Map();
+      for (const [gid, g] of Object.entries(e || {})) for (const m of Array.isArray(g?.weitereMacs) ? g.weitereMacs : []) if (typeof m === 'string' && m.toLowerCase() !== gid) this.alias.set(m.toLowerCase(), gid);
+    }
+    return this.alias.get(String(id || '').toLowerCase()) || id;
+  }
   von(ip) {
     let u = this.jeIp.get(ip);
     if (u && this.jetzt() - (u.ts || 0) > 24 * 3600000) { this.jeIp.delete(ip); u = undefined; }   // älter als 24 h (DHCP-Lease) = unbekannt, UniFi neu fragen
-    const id = u?.mac || `ip:${ip}`;
-    const eigen = this.eigene()[id]?.name;
+    const id = u?.mac ? this.haupt(u.mac) : `ip:${ip}`;
+    const eigen = this.eigene()[id]?.name || (u?.mac && id !== u.mac ? this.jeMac.get(id)?.name : '');
     if (!u && !this.vpnNetz.test(ip)) { if (!this.ohneMac.has(ip) && this.ohneMac.size < 1000) this.ohneMac.set(ip, this.jetzt()); this.bald(ip); }
     const vpnName = this.vpnNetz.test(ip) ? this.vpnNamen?.get(ip) : null;
     if (!u && !eigen && !vpnName) this.ptrAnfragen(ip);

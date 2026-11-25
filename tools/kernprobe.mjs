@@ -559,6 +559,12 @@ try {
       pruefe('Geräte: VPN-Geräte mit Namen aus der Konsole („Laptop · VPN“, IP mit /32 oder ohne), eigener Name geht vor, ohne Namen weiter „VPN <IP>“; ID bleibt die IP',
         vpnLaptop.name === 'Laptop · VPN' && vpnLaptop.id === 'ip:192.168.5.3' && vpnLaptop.netz === 'VPN' && vpnRouter.name === 'Reiserouter · VPN' && vpnLeer.name === 'VPN 192.168.5.5' && vpnFremd.name === 'VPN 192.168.5.9' && gE.von('192.168.5.3').name === 'Arbeitslaptop',
         JSON.stringify([vpnLaptop.name, vpnRouter.name, vpnLeer.name, vpnFremd.name])); }
+    { // 25.11.2026: weitere MAC-Adressen eines Geräts (Kabel + WLAN) → alles läuft unter dem Hauptgerät, Name des Hauptgeräts
+      const zA = []; const gA = new Geraete({ zugang: () => ({ url: 'https://x', schluessel: 'k' }), gateway: () => '', jetzt: () => uhrG, holer: (z, p) => (p.includes('stat/sta') ? Promise.resolve({ data: sta }) : holer(z, p)), protokoll: () => {}, onZuordnung: (z) => zA.push(z),
+        eigene: () => ({ [MAC61]: { name: 'Reiserouter', weitereMacs: [MAC60.toUpperCase()] } }) });
+      const ersteA = gA.von('192.168.1.60'); await gA.unifiLesen(); const nachA = gA.von('192.168.1.60');
+      pruefe('Geräte: weitere MAC eines Geräts (z. B. WLAN des Reiserouters) läuft unter dem Hauptgerät – ID, Name, Zuordnung alter IP-Einträge', nachA.id === MAC61 && nachA.name === 'Reiserouter' && nachA.mac === MAC60 && gA.von('192.168.1.61').id === MAC61 && zA.every((z) => z.nach === MAC61) && gA.haupt('cc:cc:cc:cc:cc:01') === 'cc:cc:cc:cc:cc:01',
+        JSON.stringify({ ersteA: ersteA.id, nachA, zA })); }
     pruefe('Geräte: ohne Namen → Hersteller bzw. „private MAC“', clientName({ mac: '94:be:46:00:00:01', oui: 'Apple' }) === 'Gerät von Apple' && clientName({ mac: '9a:00:00:00:00:31' }) === 'Gerät mit privater MAC' && clientName({ mac: '52:54:00:00:00:9d' }) === 'Gerät mit privater MAC' && clientName({ mac: '94:be:46:00:00:01' }) === '' && clientName({ mac: 'x', hostname: ' pc ' }) === 'pc');
     { const bek = g.bekannteUnifi(); pruefe('Geräte: Liste aller UniFi-bekannten Geräte für „Gerät hinzufügen“ – auch offline (rest/user), mit Namen', bek.some((x) => x.id === 'cc:cc:cc:cc:cc:01' && x.name === 'Gast Smartphone ALT' && x.offline) && bek.some((x) => x.id === MAC61 && !x.offline), JSON.stringify(bek)); }
     pruefe('Geräte: Namen auch für bekannte Offline-Geräte (UniFi rest/user), Online-Name bleibt', g.nameVon('cc:cc:cc:cc:cc:01') === 'Gast Smartphone ALT' && g.nameVon('52:54:00:00:00:9d') === 'Gerät mit privater MAC' && g.nameVon('ip:192.168.1.5') === '' && g.iconVon(MAC61) === 1681 && g.iconVon(MAC60) === null && g.nameVon(MAC60) === 'Switch' && g.status().unifi.geraete === 2);
@@ -711,6 +717,20 @@ try {
   pruefe('Web: Gerätesymbol aus dem Zwischenspeicher (PNG), ungültige ID abgelehnt, ohne Anmeldung 401, Symbol-ID in der Geräteliste',
     symOk.status === 200 && symOk.headers.get('content-type') === 'image/png' && Buffer.from(await symOk.arrayBuffer()).equals(png) && [400, 404].includes(symBoese.status) && symOhne.status === 401
     && gl.geraete.find((g) => g.id === 'aa:bb:cc:dd:ee:ff')?.icon === 1681, `${symOk.status} ${symBoese.status} ${symOhne.status}`);
+  {
+    // 25.11.2026: weitere MAC-Adressen per API – vereinheitlicht, eigener/fremder/ungültiger Eintrag abgelehnt, Verlauf der weiteren MAC übernommen
+    const H1 = 'aa:aa:aa:aa:aa:01', W1 = 'aa:aa:aa:aa:aa:02';
+    prot2.aufnehmen({ ts: Date.now(), ip: '10.9.9.2', geraet: W1, geraetName: 'WLAN-Seite', domain: 'w-seite.example', typ: 'A', aktion: 'erlaubt', grund: '' }); prot2.schreiben();
+    const okM = await post(`/api/geraete/${H1}`, { weitereMacs: 'AA-AA-AA-AA-AA-02, aa:aa:aa:aa:aa:02' }, 'PUT');
+    const selbst = await post(`/api/geraete/${H1}`, { weitereMacs: H1 }, 'PUT'), kaputt = await post(`/api/geraete/${H1}`, { weitereMacs: 'keine-mac' }, 'PUT');
+    const fremd = await post('/api/geraete/aa:aa:aa:aa:aa:09', { weitereMacs: W1 }, 'PUT'), ip = await post('/api/geraete/ip:10.1.1.1', { weitereMacs: W1 }, 'PUT');
+    const gespeichert = einst.werte.geraete[H1]?.weitereMacs?.join(), verlauf = prot2.eintraege({ geraet: H1 }).some((z) => z.domain === 'w-seite.example');
+    const glM = await (await holen('/api/geraete', { headers: { cookie } })).json();
+    await post(`/api/geraete/${H1}`, { weitereMacs: '' }, 'PUT');
+    pruefe('Web: weitere MAC-Adressen – vereinheitlicht und ohne Doppelte gespeichert, Verlauf übernommen, in /api/geraete sichtbar; eigene, ungültige, schon vergebene MAC und IP-Gerät abgelehnt; leer = entfernt',
+      okM.status === 200 && gespeichert === W1 && verlauf && glM.geraete.find((g) => g.id === H1)?.weitereMacs?.join() === W1 && [selbst, kaputt, fremd, ip].every((r) => r.status === 400) && !einst.werte.geraete[H1]?.weitereMacs,
+      JSON.stringify({ ok: okM.status, gespeichert, verlauf, selbst: selbst.status, kaputt: kaputt.status, fremd: fremd.status, ip: ip.status }));
+  }
   const dPut = await post('/api/dienste/youtube', { modus: 'sperren', geltung: 'profil:kinder' }, 'PUT'), dFalsch = await post('/api/dienste/youtube', { modus: 'sperren', geltung: 'profil:gibtsnicht' }, 'PUT'), dUnbekannt = await post('/api/dienste/gibtsnicht', { modus: 'sperren' }, 'PUT');
   const dListe = await (await holen('/api/dienste', { headers: { cookie } })).json();
   await post('/api/dienste/youtube', { modus: 'frei' }, 'PUT');

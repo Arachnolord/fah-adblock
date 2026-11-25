@@ -126,10 +126,10 @@ function webServer(k) {
   route('GET', '/api/geraete', () => {
     const jetzt = Date.now(), einstG = w().geraete, stat = protokoll.geraeteStatistik();
     const bekannt = new Set(stat.map((s) => s.id));
-    const liste = stat.map((s) => ({ ...s, icon: geraete.iconVon?.(s.id) || null, name: einstG[s.id]?.name || (s.name === s.id || s.name === s.ip ? geraete.nameVon(s.id) || s.name : s.name), eigenerName: !!einstG[s.id]?.name, profil: filter.profilVon(s.id).id, pauseBis: filter.pauseBis(s.id, jetzt) }));
-    for (const [gid, g] of Object.entries(einstG)) if (!bekannt.has(gid)) liste.push({ id: gid, icon: geraete.iconVon?.(gid) || null, name: g.name || geraete.nameVon(gid) || gid, eigenerName: !!g.name, ip: '', zuletzt: 0, erlaubt: 0, geblockt: 0, quote: 0, kurve: [], profil: filter.profilVon(gid).id, pauseBis: filter.pauseBis(gid, jetzt) });
+    const liste = stat.map((s) => ({ ...s, weitereMacs: einstG[s.id]?.weitereMacs || [], icon: geraete.iconVon?.(s.id) || null, name: einstG[s.id]?.name || (s.name === s.id || s.name === s.ip ? geraete.nameVon(s.id) || s.name : s.name), eigenerName: !!einstG[s.id]?.name, profil: filter.profilVon(s.id).id, pauseBis: filter.pauseBis(s.id, jetzt) }));
+    for (const [gid, g] of Object.entries(einstG)) if (!bekannt.has(gid)) liste.push({ id: gid, weitereMacs: g.weitereMacs || [], icon: geraete.iconVon?.(gid) || null, name: g.name || geraete.nameVon(gid) || gid, eigenerName: !!g.name, ip: '', zuletzt: 0, erlaubt: 0, geblockt: 0, quote: 0, kurve: [], profil: filter.profilVon(gid).id, pauseBis: filter.pauseBis(gid, jetzt) });
     const inListe = new Set(liste.map((x) => x.id));
-    const unifiBekannt = (geraete.bekannteUnifi?.() || []).filter((x) => !inListe.has(x.id)).sort((a, b) => a.name.localeCompare(b.name, 'de')).slice(0, 500);
+    const unifiBekannt = (geraete.bekannteUnifi?.() || []).filter((x) => !inListe.has(x.id) && (!geraete.haupt || geraete.haupt(x.id) === x.id)).sort((a, b) => a.name.localeCompare(b.name, 'de')).slice(0, 500);
     return { geraete: liste, unifiBekannt, profile: w().profile.map((p) => ({ id: p.id, name: p.name, farbe: p.farbe })) };
   });
   // Gerätesymbole aus UniFi (static.ui.com) – einmal geladen und in data/symbole zwischengespeichert, damit der Browser nur diese Seite fragt
@@ -151,12 +151,38 @@ function webServer(k) {
     const gid = decodeURIComponent(p.id);
     pruefe(gid.length <= 64, 'Ungültige Geräte-ID');
     if (body.profil !== undefined) pruefe(w().profile.some((x) => x.id === body.profil), 'Profil unbekannt');
+    // Weitere MAC-Adressen desselben Geräts (25.11.2026, z. B. Reiserouter: Kabel + WLAN) – alle laufen unter diesem Gerät (Profil, Statistik, Regeln)
+    let macs = null;
+    if (body.weitereMacs !== undefined) {
+      const MAC = /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
+      pruefe(MAC.test(gid), 'Weitere MAC-Adressen gehen nur bei Geräten mit MAC-Adresse');
+      const roh = (Array.isArray(body.weitereMacs) ? body.weitereMacs : String(body.weitereMacs || '').split(/[\s,;]+/)).map((m) => String(m).trim()).filter(Boolean);
+      const falsch = roh.filter((m) => !MAC.test(m));
+      pruefe(!falsch.length, `Keine MAC-Adresse: ${falsch.slice(0, 2).join(', ')} (Form aa:bb:cc:dd:ee:ff)`);
+      macs = [...new Set(roh.map((m) => m.toLowerCase().replace(/-/g, ':')))];
+      pruefe(macs.length <= 5, 'Höchstens 5 weitere MAC-Adressen');
+      pruefe(!macs.includes(gid), 'Die eigene MAC-Adresse muss nicht eingetragen werden');
+      for (const [anderes, g] of Object.entries(w().geraete)) if (anderes !== gid && (g.weitereMacs || []).some((m) => macs.includes(m))) pruefe(false, `Eine MAC gehört schon zu „${g.name || geraete.nameVon(anderes) || anderes}“`);
+      for (const m of macs) pruefe(!(w().geraete[m]?.weitereMacs || []).length, `${m} hat selbst weitere MAC-Adressen – dort erst entfernen`);
+    }
+    const vorher = new Set(w().geraete[gid]?.weitereMacs || []);
     einst.aendern((x) => {
       const g = x.geraete[gid] || {};
       if (body.name !== undefined) g.name = String(body.name).trim().slice(0, 60);
       if (body.profil !== undefined) g.profil = body.profil;
+      if (macs) {
+        if (macs.length) g.weitereMacs = macs; else delete g.weitereMacs;
+        for (const m of macs) {   // was bisher unter der weiteren MAC lief, gehört jetzt dem Gerät (eigener Eintrag weg, Regeln/Pausen/Dienste umgehängt)
+          delete x.geraete[m];
+          if (x.pausen.geraete[m]) { x.pausen.geraete[gid] = Math.max(x.pausen.geraete[gid] || 0, x.pausen.geraete[m]); delete x.pausen.geraete[m]; }
+          for (const r of x.regeln) if (r.geltung === `geraet:${m}`) r.geltung = `geraet:${gid}`;
+          for (const d of Object.values(x.dienste || {})) if (d.geltung === `geraet:${m}`) d.geltung = `geraet:${gid}`;
+        }
+      }
       x.geraete[gid] = g;
     });
+    // Verlauf der neu verbundenen MACs dem Gerät zuschlagen (Statistik, Protokoll)
+    if (macs) for (const m of macs) if (!vorher.has(m)) protokoll.zusammenfuehren?.(m, gid, 0, w().geraete[gid]?.name || '');
     return { ok: true };
   });
   route('POST', '/api/pause', ({ body }) => {

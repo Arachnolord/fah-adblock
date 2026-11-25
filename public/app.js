@@ -509,7 +509,7 @@
       const profil = d.profile.find((p) => p.id === g.profil) || d.profile[0];
       const pausiert = g.pauseBis > jetzt;
       return `<article class="karte geraet ${pausiert ? 'pausiert' : ''}" style="--profilfarbe:${esc(profil?.farbe || '#40e0a0')}" data-geraet="${esc(g.id)}">
-        <div class="gkopf"><div class="symbol">${geraetSymbol(g)}</div><div class="gname"><b title="${esc(g.id)}">${esc(g.name)}</b><small>${esc(g.ip || g.id)} · ${esc(vor(g.zuletzt))}</small></div><i class="aktiv ${jetzt - g.zuletzt < 600000 ? 'an' : ''}" title="aktiv in den letzten 10 min"></i></div>
+        <div class="gkopf"><div class="symbol">${geraetSymbol(g)}</div><div class="gname"><b title="${esc(g.id)}">${esc(g.name)}</b><small>${esc(g.ip || g.id)} · ${esc(vor(g.zuletzt))}${g.weitereMacs?.length ? ` · 🔗 +${g.weitereMacs.length} MAC` : ''}</small></div><i class="aktiv ${jetzt - g.zuletzt < 600000 ? 'an' : ''}" title="aktiv in den letzten 10 min"></i></div>
         <canvas data-kurve='${esc(JSON.stringify(g.kurve || []))}'></canvas>
         <div class="gzahlen"><span><b>${zahl(g.erlaubt + g.geblockt)}</b> Anfragen</span><span><b style="color:var(--block)">${zahl(g.geblockt)}</b> geblockt</span><span><b>${String(g.quote).replace('.', ',')} %</b></span></div>
         ${pausiert ? `<div class="chip gelb">⏸ pausiert bis ${new Date(g.pauseBis).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}
@@ -520,6 +520,7 @@
         <div class="gaktionen">
           ${pausiert ? '<button class="knopf klein" data-gpause="0">▶ Schutz an</button>' : '<button class="knopf klein" data-gpause="15">⏸ 15 min</button><button class="knopf klein leise" data-gpause="60">⏸ 1 h</button>'}
           <button class="knopf klein leise" data-umbenennen>✎ Name</button>
+          ${/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(g.id) ? `<button class="knopf klein leise" data-gmacs title="Weitere MAC-Adressen desselben Geräts, z. B. WLAN und Kabel">🔗 MACs</button>` : ''}
           <button class="knopf klein leise" data-gprotokoll>📜 Protokoll</button>
         </div></article>`;
     }).join('');
@@ -536,6 +537,12 @@
       if (e.target.closest('[data-rettung]')) return rettung(g);
       if (e.target.closest('[data-gpause]')) return pause(id, +e.target.closest('[data-gpause]').dataset.gpause);
       if (e.target.closest('[data-gprotokoll]')) { S.protokollGeraet = id; location.hash = 'protokoll'; return; }
+      if (e.target.closest('[data-gmacs]')) {
+        const neu = prompt(`Weitere MAC-Adressen von „${g.name}“ (z. B. WLAN und Kabel), durch Komma getrennt – leer = keine.\nAlle laufen dann unter diesem Gerät: gleiches Profil, gemeinsame Statistik.`, (g.weitereMacs || []).join(', '));
+        if (neu === null) return;
+        try { await api(`/api/geraete/${encodeURIComponent(id)}`, { methode: 'PUT', daten: { weitereMacs: neu } }); toast(neu.trim() ? 'MAC-Adressen verbunden' : 'Weitere MAC-Adressen entfernt'); zeigeGeraete(); } catch (err) { toast(err.message, 'fehler'); }
+        return;
+      }
       if (e.target.closest('[data-umbenennen]')) {
         const name = prompt('Name für dieses Gerät (leer = automatisch)', g.eigenerName ? g.name : '');
         if (name === null) return;
