@@ -42,7 +42,11 @@ function unifiAnfrage(z, methode, pfad, daten) {
     s.once('secureConnect', () => {
       const fp = s.getPeerCertificate().fingerprint256 || '';
       if (z.abdruck && fp !== z.abdruck) { clearTimeout(uhr); s.destroy(); return nein(new Error('UniFi: Zertifikat der Konsole hat sich geändert – nichts gesendet')); }
-      if (!z.abdruck && fp && z.merken) z.merken(fp);
+      // Erstes Merken scheitert (volle Platte …) → nichts senden: ohne gespeicherten Abdruck wäre die Verbindung nicht festgenagelt
+      if (!fp) { clearTimeout(uhr); s.destroy(); return nein(new Error('UniFi: Konsole zeigt kein Zertifikat – nichts gesendet')); }
+      // Erster Kontakt: Abdruck merken und SOFORT im Zugang festhalten – Folgeanfragen mit demselben Zugang (Portfreigabe: GET, dann POST/PUT)
+      // gelten nur noch mit genau diesem Zertifikat. Scheitert das Merken (volle Platte …), wird nichts gesendet.
+      if (!z.abdruck && z.merken) { try { z.merken(fp); z.abdruck = fp; } catch (e) { clearTimeout(uhr); s.destroy(); return nein(new Error(`UniFi: Zertifikat nicht speicherbar (${e.message}) – nichts gesendet`)); } }
       const req = http.request({ method: methode, path: u.pathname + u.search, createConnection: () => s, headers: { Host: u.host, 'X-API-KEY': z.schluessel, Accept: 'application/json', ...(text !== undefined ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) } : {}) } }, (res) => {
         let t = ''; res.on('data', (d) => { if (t.length < 2e6) t += d; });
         res.on('end', () => { clearTimeout(uhr); let j = null; try { j = JSON.parse(t); } catch (e) {} if (res.statusCode >= 400) return nein(new Error(`UniFi: HTTP ${res.statusCode}${j?.meta?.msg ? ` (${j.meta.msg})` : ''}`)); ok(j || {}); });

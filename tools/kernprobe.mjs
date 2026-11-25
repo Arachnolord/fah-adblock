@@ -231,6 +231,16 @@ try {
   const e2 = new Einstellungen({ verzeichnis: ev, geheimnis: 'z'.repeat(20), env: {} }).laden();
   pruefe('Update: vom Nutzer entfernte Vorgabeliste kommt nicht wieder', !e2.werte.listen.some((l) => l.id === 'frei-anudeep'));
   {
+    // 25.11.2026 (K13): scheitert das Speichern (volle Platte), wirft aendern und der Stand im Speicher bleibt unverändert (vorher schon übernommen,
+    // ein erneuter Versuch kam nie, nach einem Neustart war der alte Stand wieder da); Beobachter werden dann nicht benachrichtigt
+    let gemeldet = 0; e2.beobachten(() => gemeldet++);
+    const vorher = e2.werte.regeln.length, datei = e2.datei; e2.datei = path.join(tmp, 'gibt-es-nicht', 'x', 'einstellungen.json');
+    let geworfen = false; try { e2.aendern((w) => { w.regeln.push({ id: 'neu', typ: 'sperren', muster: 'x.de' }); }); } catch (e) { geworfen = true; }
+    const unveraendert = e2.werte.regeln.length === vorher && gemeldet === 0;
+    e2.datei = datei; e2.aendern((w) => { w.regeln.push({ id: 'neu', typ: 'sperren', muster: 'x.de' }); });
+    pruefe('Einstellungen: Schreibfehler → aendern wirft, Speicher unverändert, kein Beobachter; danach normal speicherbar', geworfen && unveraendert && e2.werte.regeln.length === vorher + 1 && gemeldet === 1, JSON.stringify({ geworfen, unveraendert, gemeldet }));
+  }
+  {
     // Kaputte Einstellungsdatei (z. B. aus einer fehlerhaften Sicherung): Start darf nie scheitern
     const ek = path.join(tmp, 'einstK'); fs.mkdirSync(ek, { recursive: true });
     fs.writeFileSync(path.join(ek, 'einstellungen.json'), JSON.stringify({ version: 1, listen: [null, 7, { id: 'eigen-1', url: 'https://x/l', kategorie: 'werbung', an: true }], profile: [null, { id: 'kinder', name: 'K' }], regeln: [null, { id: 'r', typ: 'sperren', muster: 'a.de', geltung: 'alle' }, { id: 'kaputt' }], geraete: { a: null, b: { profil: 'kinder' } }, dienste: { youtube: 'x' }, pausen: { global: 'x', geraete: { a: 'x', b: 5 } }, dns: { erlaubteNetze: ['kaputt', '10.0.0.0/8'], gateway: 'nix', lokaleZonen: 'x' }, upstream: [null, { url: 'ftp://x' }], protokoll: { tage: 'viele' }, web: { vertrauteProxies: ['x', '172.16.0.0/12'] } }));
@@ -332,6 +342,54 @@ try {
     doh.sitzungVerwerfen(); h2.close();
   }
   {
+    // 25.11.2026 (Prüfung K8): DoH-Antwort muss eine DNS-Antwort auf GENAU diese Frage sein, höchstens 64 KiB, Inhaltstyp application/dns-message
+    const h2v = http2.createServer(); let art = 'ok';
+    h2v.on('stream', (st, kopf) => {
+      const teile = []; st.on('data', (d) => teile.push(d)); st.on('end', () => {
+        const anf = Buffer.concat(teile);
+        if (art === 'typ') { st.respond({ ':status': 200, 'content-type': 'text/html' }); return st.end('<html>Anmeldung</html>'); }
+        st.respond({ ':status': 200, 'content-type': art === 'mimex' ? 'application/dns-messagex' : 'application/dns-message; charset=binary' });
+        const q = dnsPacket.decode(anf).questions[0];
+        if (art === 'tc') { const k = Buffer.from(antwortFuer(anf)); k.writeUInt16BE(k.readUInt16BE(2) | 0x0200, 2); return st.end(k); }  // TC gesetzt
+        if (art === 'kurz') { const k = Buffer.from(antwortFuer(anf)); return st.end(k.subarray(0, k.length - 6)); }               // Eintrag abgeschnitten
+        if (art === 'hinten') return st.end(Buffer.concat([antwortFuer(anf), Buffer.from([0, 0, 0])]));                             // Müll hinten dran
+        if (art === 'typ97') return st.end(dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: [{ ...q, type: 'UNKNOWN_97' }], answers: [] }));
+        if (art === 'opt') return st.end(dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: [{ ...q, name: q.name.toUpperCase() }], answers: [{ type: 'A', name: q.name, ttl: 60, data: '9.9.9.9' }], additionals: [{ type: 'OPT', name: '.', udpPayloadSize: 1232, flags: 0, options: [] }] }));
+        if (art === 'gross') return st.end(Buffer.alloc(70000, 1));
+        if (art === 'fremd') return st.end(antwortFuer(frage('anders.example')));
+        if (art === 'anfrage') return st.end(anf);   // Echo der Anfrage = QR=0, keine Antwort
+        st.end(antwortFuer(anf));
+      });
+    });
+    await new Promise((r) => h2v.listen(0, '127.0.0.1', r));
+    const dv = new DohAnbieter({ name: 'pruef', url: `http://127.0.0.1:${h2v.address().port}/dns-query` });
+    const versuch = async (a, typ = 'A') => { art = a; return dv.frage(paket.upstreamAnfrage(paket.lesen(frage('Pruef.Example', typ))), 2000).then((b) => 'ok:' + (dnsPacket.decode(b).answers[0]?.data ?? '-'), (e) => e.message); };
+    const v = { ok: await versuch('ok'), opt: await versuch('opt'), typ: await versuch('typ'), mimex: await versuch('mimex'), gross: await versuch('gross'), fremd: await versuch('fremd'), anfrage: await versuch('anfrage'), kurz: await versuch('kurz'), hinten: await versuch('hinten'), tc: await versuch('tc'), typ97: await versuch('typ97', 'UNKNOWN_65') };
+    pruefe('DoH: passende Antwort angenommen (auch mit OPT, Name in anderer Schreibweise, Inhaltstyp mit Parameter); abgelehnt: falscher/ähnlicher Inhaltstyp, über 64 KiB, andere Frage, reine Anfrage (QR=0), abgeschnittener Eintrag, Müll am Ende, TC-Bit, Typ 97 statt 65',
+      v.ok === 'ok:9.9.9.9' && v.opt === 'ok:9.9.9.9' && /keine DNS-Antwort/.test(v.typ) && /keine DNS-Antwort/.test(v.mimex) && /zu groß/.test(v.gross) && ['fremd', 'anfrage', 'kurz', 'hinten', 'tc', 'typ97'].every((k) => /fremde/.test(v[k])), JSON.stringify(v));
+    dv.sitzungVerwerfen(); h2v.close();
+  }
+  {
+    // 25.11.2026 (K8): SERVFAIL/REFUSED mit HTTP 200 = weicher Fehler → nächster Anbieter; antworten alle so, geht die erste Fehlerantwort weiter (nicht gespeichert)
+    const rufS = { a: 0, b: 0, c: 0 }; let allesKaputt = false;
+    const fehlerAntwort = (buf, rcode) => { const q = dnsPacket.decode(buf); return dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE | rcode, questions: q.questions, answers: [] }); };
+    const fabrikS = (x) => ({ name: x.name, gesperrtBis: 0, fehler: 0, status: () => ({}), frage: async (buf) => { rufS[x.name]++;
+      if (x.name === 'a') return fehlerAntwort(buf, 2); if (x.name === 'b' || allesKaputt) return fehlerAntwort(buf, 5); return antwortFuer(buf); } });
+    // erweiterter Rcode (BADVERS = 16: Kopf 0, obere Bits im OPT) zählt wie jeder andere Fehler – nicht als NOERROR speichern
+    const badvers = (buf) => { const q = dnsPacket.decode(buf); return dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: q.questions, answers: [], additionals: [{ type: 'OPT', name: '.', udpPayloadSize: 1232, extendedRcode: 1, ednsVersion: 0, flags: 0, options: [] }] }); };
+    const rufB = { x: 0, y: 0 };
+    const upB = new Upstream({ anbieter: [{ name: 'x' }, { name: 'y' }], jetzt: () => 7000000, anbieterFabrik: (x) => ({ name: x.name, gesperrtBis: 0, fehler: 0, status: () => ({}), frage: async (buf) => { rufB[x.name]++; return x.name === 'x' ? badvers(buf) : antwortFuer(buf); } }) });
+    const xb = paket.lesen(frage('badvers.example')), rb1 = await upB.frage(xb, paket.upstreamAnfrage(xb)), rb2 = await upB.frage(xb, paket.upstreamAnfrage(xb));
+    pruefe('Upstream: erweiterter Rcode im OPT (BADVERS) erkannt → nächster Anbieter; die echte Antwort wird gespeichert, BADVERS nicht', paket.rcodeVon(badvers(paket.upstreamAnfrage(xb))) === 16 && paket.rcodeVon(antwortFuer(paket.upstreamAnfrage(xb))) === 0 && rb1.anbieter === 'y' && rb2.cache && rb2.anbieter === 'y', JSON.stringify({ rb1: rb1.anbieter, rb2: [rb2.anbieter, rb2.cache], rufB }));
+    const upS = new Upstream({ anbieter: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], jetzt: () => 7000000, anbieterFabrik: fabrikS });
+    const frS = (name) => { const x = paket.lesen(frage(name)); return upS.frage(x, paket.upstreamAnfrage(x)); };
+    const gut = await frS('servfail.example');
+    allesKaputt = true; const schlecht1 = await frS('bogus.example'), schlecht2 = await frS('bogus.example');
+    pruefe('Upstream: SERVFAIL/REFUSED des ersten Anbieters → nächster wird gefragt; scheitern alle, kommt die erste Fehlerantwort (SERVFAIL) und nichts wird gespeichert; Anbieter werden dafür nicht ausgesetzt',
+      gut.anbieter === 'c' && (dnsPacket.decode(gut.buf).flags & 15) === 0 && (dnsPacket.decode(schlecht1.buf).flags & 15) === 2 && schlecht1.anbieter === 'a' && !schlecht2.cache && upS.anbieter.every((x) => x.gesperrtBis === 0),
+      JSON.stringify({ gut: gut.anbieter, s1: [schlecht1.anbieter, dnsPacket.decode(schlecht1.buf).flags & 15], s2cache: schlecht2.cache, rufS }));
+  }
+  {
     // Fund 14: Gateway-Antwort für lokale Zonen muss zu ID und Frage passen – Fremdpakete werden verworfen
     const gw = dgram.createSocket('udp4'); await new Promise((r) => gw.bind(0, '127.0.0.1', r));
     const gwAntwort = (q, id, name) => dnsPacket.encode({ type: 'response', id, flags: dnsPacket.RECURSION_AVAILABLE, questions: [{ type: 'A', name }], answers: [{ type: 'A', name, ttl: 60, data: name === q.questions[0].name ? '192.168.1.23' : '6.6.6.6' }] });
@@ -364,6 +422,25 @@ try {
   pruefe('Server: Gesundheitsanfrage wird intern beantwortet', (await dek('health.fah-adblock', '192.168.1.8', 'TXT')).answers[0].data[0].toString() === 'ok');
   pruefe('Server: Firefox-DoH-Kanarie → NXDOMAIN', ((await dek('use-application-dns.net', '192.168.1.8')).flags & 15) === 3);
   pruefe('Server: Frage mit Nicht-ASCII-Namen → FORMERR statt kaputtem Paket', ((await dek('müller.de', '192.168.1.8')).flags & 15) === 1);
+  {
+    // 25.11.2026 (Prüfung K3/K10): Antworten (QR=1) nie beantworten – sonst Pingpong zweier Resolver mit gefälschtem Absender, auch über die
+    // Gesundheitsfrage (die vor der Bremse steht); Opcode ≠ QUERY → NOTIMP; nicht genau eine Frage → FORMERR; fremdes Netz nur REFUSED
+    const roh = (o) => dnsPacket.encode({ id: 77, flags: dnsPacket.RECURSION_DESIRED, ...o });
+    const qr = await srv.bearbeite(roh({ type: 'response', questions: [{ type: 'TXT', name: 'health.fah-adblock' }], answers: [{ type: 'TXT', name: 'health.fah-adblock', ttl: 0, data: ['ok'] }] }), '192.168.1.21', true);
+    const qrFremd = await srv.bearbeite(roh({ type: 'response', questions: [] }), '8.8.8.8', true);
+    const status = dnsPacket.decode(await srv.bearbeite(roh({ type: 'query', flags: (2 << 11) | dnsPacket.RECURSION_DESIRED, questions: [{ type: 'A', name: 'seite.de' }] }), '192.168.1.22', true));
+    const zwei = dnsPacket.decode(await srv.bearbeite(roh({ type: 'query', questions: [{ type: 'A', name: 'seite.de' }, { type: 'A', name: 'ads.example.com' }] }), '192.168.1.23', true));
+    const leer = dnsPacket.decode(await srv.bearbeite(roh({ type: 'query', questions: [] }), '192.168.1.23', true));
+    const leerFremd = dnsPacket.decode(await srv.bearbeite(roh({ type: 'query', questions: [] }), '8.8.4.4', true));
+    // Weicher Upstream-Fehler (SERVFAIL von allen Anbietern) mit CNAME auf einen gelisteten Tracker: geht als SERVFAIL weiter, nicht als Sperre
+    const upSf = { frage: async (anf) => ({ buf: dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE | 2, questions: anf.paket.questions, answers: [{ type: 'CNAME', name: anf.frage.name, ttl: 60, data: 'ads.example.com' }] }), alterSek: 0, cache: false, anbieter: 'x' }) };
+    const srvSf = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter, upstream: upSf, lokal: lokalFake, geraete: { von: (ip) => ({ id: `ip:${ip}`, name: ip }) } });
+    const sf = dnsPacket.decode(await srvSf.bearbeite(frage('harmlos.example'), '192.168.1.24', true));
+    pruefe('Server: SERVFAIL aller Anbieter mit CNAME auf Tracker → SERVFAIL weitergereicht (keine CNAME-Sperre auf eine Fehlerantwort)', (sf.flags & 15) === 2 && !sf.answers.some((x) => x.data === '0.0.0.0'), JSON.stringify(sf.answers));
+    pruefe('Server: Antwortpakete (QR=1) werden verworfen (auch Gesundheitsfrage, auch aus fremdem Netz); Opcode STATUS → NOTIMP mit Opcode STATUS in der Antwort; zwei Fragen oder keine → FORMERR; fremdes Netz ohne Frage → REFUSED',
+      qr === null && qrFremd === null && (status.flags & 15) === 4 && status.opcode === 'STATUS' && (zwei.flags & 15) === 1 && (leer.flags & 15) === 1 && (leerFremd.flags & 15) === 5,
+      JSON.stringify({ qr, qrFremd, status: [status.flags & 15, status.opcode], zwei: zwei.flags & 15, leer: leer.flags & 15, leerFremd: leerFremd.flags & 15 }));
+  }
   {
     const upC = { frage: async (anf) => ({ buf: dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: anf.paket.questions, answers: [{ type: 'CNAME', name: anf.frage.name, ttl: 60, data: 'w5.example.com' }, { type: 'A', name: 'w5.example.com', ttl: 60, data: '1.1.1.1' }] }), alterSek: 0, cache: false, anbieter: 'fake' }) };
     const srvC = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter: filterF, upstream: upC, lokal: lokalFake, geraete: { von: (ip) => ({ id: `ip:${ip}`, name: ip }) } });
@@ -511,6 +588,12 @@ try {
   await new Promise((r) => web.listen(0, '127.0.0.1', r));
   const B = `http://127.0.0.1:${web.address().port}`;
   const holen = (p, o = {}) => fetch(B + p, o);
+  {
+    // 25.11.2026 (Prüfung K1): `GET //` warf vor dem try → unbehandelte Ablehnung → Prozess (und DNS) beendet. Jetzt 400, Server läuft weiter.
+    const roheAntwort = (ziel) => new Promise((ok) => { const net = require('node:net'); const s = net.connect(web.address().port, '127.0.0.1', () => s.write(`GET ${ziel} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`)); let t = ''; s.on('data', (d) => { t += d; }); s.on('end', () => ok(t.split('\r\n')[0])); s.on('error', (e) => ok('Fehler ' + e.message)); });
+    const z1 = await roheAntwort('//'), z2 = await roheAntwort('//a:b'), z3 = await roheAntwort('/%'), danach = (await holen('/api/uebersicht')).status;
+    pruefe('Web: ungültiges Anfrageziel (//, //a:b, kaputte %-Kodierung) → 400, Server läuft danach weiter', / 400 /.test(z1) && / 400 /.test(z2) && / 400 /.test(z3) && danach === 401, `${z1} | ${z2} | ${z3} | ${danach}`);
+  }
   pruefe('Web: ohne Anmeldung 401, statische Seite erreichbar, Pfad-Ausbruch landet auf index.html', (await holen('/api/uebersicht')).status === 401 && (await (await holen('/')).text()).includes('ok') && !(await (await holen('/..%2f..%2fetc%2fpasswd')).text()).includes('root:'));
   const login = await holen('/api/anmelden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'admin', passwort: 'admin' }) });
   const cookie = login.headers.get('set-cookie').split(';')[0];
@@ -759,6 +842,34 @@ try {
     };
     const sk = require('node:child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', path.join(kd, 'k.pem'), '-out', path.join(kd, 'c.pem'), '-days', '90', '-subj', '/CN=dns-kind1234.example.org', '-addext', 'subjectAltName=DNS:dns-kind1234.example.org'], { stdio: 'ignore' });
     const mitOpenssl = sk.status === 0;
+    if (mitOpenssl) {
+      // 25.11.2026 (Prüfung K13): Scheitert das erste Merken des UniFi-Zertifikatabdrucks (volle Platte), wird NICHTS gesendet (Schlüssel nie
+      // über eine nicht festgenagelte Verbindung) und der Prozess stürzt nicht ab
+      const { unifiAnfrage } = require('../src/geraete.js');
+      let empfangen = 0;
+      const ts = require('node:tls').createServer({ key: fs.readFileSync(path.join(kd, 'k.pem')), cert: fs.readFileSync(path.join(kd, 'c.pem')) }, (s) => { s.on('data', (d) => { empfangen += d.length; }); s.on('error', () => {}); });
+      await new Promise((r) => ts.listen(0, '127.0.0.1', r));
+      const ergU = await unifiAnfrage({ url: `https://127.0.0.1:${ts.address().port}`, schluessel: 'geheim', abdruck: '', merken: () => { throw new Error('Platte voll'); } }, 'GET', '/proxy/network/api/s/default/stat/sta').then(() => 'gesendet', (e) => e.message);
+      await new Promise((r) => setTimeout(r, 100));
+      pruefe('UniFi: Abdruck nicht speicherbar → Anfrage abgelehnt, kein Byte HTTP (API-Schlüssel) gesendet', /nicht speicherbar/.test(ergU) && empfangen === 0, `${ergU} | empfangen ${empfangen}`);
+      ts.close();
+      // Erster Kontakt merkt den Abdruck UND hält ihn im Zugang fest: die Folgeanfrage mit demselben Zugang (Portfreigabe GET → POST) gegen ein
+      // ANDERES Zertifikat sendet nichts und überschreibt den gemerkten Abdruck nicht (vorher galt sie wieder als „erster Kontakt“)
+      const sk2 = require('node:child_process').spawnSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-keyout', path.join(kd, 'k2.pem'), '-out', path.join(kd, 'c2.pem'), '-days', '1', '-subj', '/CN=fremd'], { stdio: 'ignore' });
+      if (sk2.status === 0) {
+        const httpsU = require('node:https'); let emp2 = 0;
+        const echtU = httpsU.createServer({ key: fs.readFileSync(path.join(kd, 'k.pem')), cert: fs.readFileSync(path.join(kd, 'c.pem')) }, (q, r) => { r.writeHead(200, { 'Content-Type': 'application/json' }); r.end('{"data":[]}'); });
+        const fremdU = require('node:tls').createServer({ key: fs.readFileSync(path.join(kd, 'k2.pem')), cert: fs.readFileSync(path.join(kd, 'c2.pem')) }, (s) => { s.on('data', (d) => { emp2 += d.length; }); s.on('error', () => {}); });
+        await new Promise((r) => echtU.listen(0, '127.0.0.1', r)); await new Promise((r) => fremdU.listen(0, '127.0.0.1', r));
+        let gemerkt = ''; const uz = { url: `https://127.0.0.1:${echtU.address().port}`, schluessel: 'geheim', abdruck: '', merken: (fp) => { gemerkt = fp; } };
+        const e1 = await unifiAnfrage(uz, 'GET', '/x').then(() => 'ok', (e) => e.message); const nachErst = gemerkt;
+        uz.url = `https://127.0.0.1:${fremdU.address().port}`;
+        const e2 = await unifiAnfrage(uz, 'POST', '/y', { a: 1 }).then(() => 'gesendet', (e) => e.message);
+        await new Promise((r) => setTimeout(r, 100));
+        pruefe('UniFi: Folgeanfrage mit demselben Zugang gegen fremdes Zertifikat → abgelehnt, kein Byte gesendet, gemerkter Abdruck unverändert', e1 === 'ok' && nachErst && uz.abdruck === nachErst && /geändert/.test(e2) && emp2 === 0 && gemerkt === nachErst, JSON.stringify({ e1, e2, emp2, gleich: gemerkt === nachErst }));
+        echtU.close(); fremdU.close();
+      }
+    }
     fakeAcme.kette = mitOpenssl ? fs.readFileSync(path.join(kd, 'c.pem'), 'utf8') : '';
     const acmeK = new Acme({ verzeichnis: kd, verzeichnisUrl: 'https://acme.test/dir', anfrager: fakeAcme, warten: async () => {}, protokoll: () => {} });
     if (mitOpenssl) {
@@ -818,6 +929,21 @@ try {
     const imLog = []; srvA.on('anfrage', (x) => imLog.push(x));
     const ttlExt = dnsPacket.decode(await srvA.bearbeite(frage('example.com'), '203.0.113.9', false, ext)).answers[0]?.ttl, ttlInt = dnsPacket.decode(await srvA.bearbeite(frage('example.com'), '192.168.1.9', true)).answers[0]?.ttl;
     pruefe('Datenschutz: Hilfsangebot ohne Protokollzeile; unterwegs ungealterte TTL und „unterwegs“ statt öffentlicher IP', !vorher.some((x) => x.domain === 'www.juuuport.de') && ttlExt === 300 && ttlInt === 50 && imLog[0]?.ip === 'unterwegs');
+    {
+      // 25.11.2026: Hilfsangebot auch bei Upstream-Ausfall nicht im Protokoll (vorher Zeile „fehler“ mit der Domain); erweiterter Upstream-Rcode
+      // (BADVERS) → SERVFAIL für Clients mit UND ohne EDNS (ohne EDNS sah er vorher wie NOERROR aus, weil das OPT wegfällt)
+      const upWeg = { frage: async () => { throw new Error('alle Anbieter weg'); } };
+      const badv = (anf) => dnsPacket.encode({ type: 'response', id: 0, flags: dnsPacket.RECURSION_AVAILABLE, questions: anf.paket.questions, answers: [], additionals: [{ type: 'OPT', name: '.', udpPayloadSize: 1232, extendedRcode: 1, ednsVersion: 0, flags: 0, options: [] }] });
+      const upBv = { frage: async (anf) => ({ buf: badv(anf), alterSek: 0, cache: false, anbieter: 'x' }) };
+      const logW = [], srvW2 = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter: fK, upstream: upWeg, lokal: lokalK, geraete: { von: (ip) => ({ id: `ip:${ip}`, name: ip }) } }); srvW2.on('anfrage', (x) => logW.push(x));
+      const logB = [], srvB = new DnsServer({ bind: '127.0.0.1', erlaubt: netzliste(['192.168.1.0/24']), filter: fK, upstream: upBv, lokal: lokalK, geraete: { von: (ip) => ({ id: `ip:${ip}`, name: ip }) } }); srvB.on('anfrage', (x) => logB.push(x));
+      const weg = dnsPacket.decode(await srvW2.bearbeite(frage('www.juuuport.de'), '192.168.1.51', true));
+      const bvEdns = dnsPacket.decode(await srvB.bearbeite(frage('seite.de'), '192.168.1.52', true)), bvOhne = dnsPacket.decode(await srvB.bearbeite(frage('seite.de', 'A', { edns: false }), '192.168.1.53', true));
+      await srvB.bearbeite(frage('www.juuuport.de'), '192.168.1.54', true);
+      pruefe('Datenschutz/K8: Hilfsangebot bei Upstream-Ausfall und bei erweitertem Rcode ohne Protokollzeile (SERVFAIL); BADVERS → SERVFAIL mit und ohne EDNS',
+        (weg.flags & 15) === 2 && !logW.some((x) => /juuuport/.test(x.domain)) && (bvEdns.flags & 15) === 2 && (bvOhne.flags & 15) === 2 && !logB.some((x) => /juuuport/.test(x.domain)) && logB.some((x) => x.aktion === 'fehler' && x.domain === 'seite.de'),
+        JSON.stringify({ weg: weg.flags & 15, logW: logW.map((x) => x.domain), bvEdns: bvEdns.flags & 15, bvOhne: bvOhne.flags & 15, logB: logB.map((x) => [x.domain, x.aktion]) }));
+    }
     pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
     if (mitOpenssl) {
       unt.speichereZertifikat(hostU, { schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8'), kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), bis: Date.now() + 80 * 86400000 });

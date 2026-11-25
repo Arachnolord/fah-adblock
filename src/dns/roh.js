@@ -59,7 +59,41 @@ function eintraege(buf) {
   }
   return liste;
 }
-const rcode = (buf) => (buf.length >= 4 ? buf.readUInt16BE(2) & 15 : -1);
+// Rcode inklusive der oberen Bits aus dem OPT-Eintrag (RFC 6891 §6.1.3, z. B. BADVERS = 16): sonst sähe eine solche Fehlerantwort
+// wie NOERROR aus und würde gespeichert. Ohne/mit kaputtem OPT zählen nur die 4 Bits im Kopf.
+const rcode = (buf) => {
+  if (buf.length < 4) return -1;
+  const tief = buf.readUInt16BE(2) & 15;
+  try { const opt = eintraege(buf).find((e) => e.typ === TYP_OPT && e.abschnitt === 'ar'); return opt ? tief | ((opt.ttl >>> 24) << 4) : tief; } catch (e) { return tief; }
+};
+
+// Ist `antwort` eine vollständige, heile, ungekürzte Antwort (QR=1, TC=0) auf genau die Frage(n) von `anfrage`? Frage-Abschnitt ab Byte 12,
+// dort nie komprimiert (davor gibt es keinen Namen): Labellängen, Typ und Klasse byte-gleich, nur Buchstaben IN den Labels
+// ohne Groß/Klein. Danach müssen alle angekündigten Einträge vollständig vorhanden sein und das Paket genau dort enden. Sonst false.
+function passtZu(anfrage, antwort) {
+  try {
+    const a = kopf(anfrage), b = kopf(antwort);
+    if (!(b.flags & 0x8000) || (b.flags & 0x0200) || a.qd !== b.qd) return false;   // QR fehlt oder TC gesetzt (über DoH nie gekürzt)
+    const klein = (x) => (x >= 65 && x <= 90 ? x + 32 : x);
+    let pos = 12;
+    for (let q = 0; q < a.qd; q++) {
+      for (;;) {
+        if (pos >= anfrage.length || pos >= antwort.length) return false;
+        const l = anfrage[pos];
+        if (antwort[pos] !== l || l > 63) return false;          // gleiche Länge, keine Zeiger/Sondertypen in der Frage
+        if (l === 0) { pos++; break; }
+        if (pos + 1 + l > anfrage.length || pos + 1 + l > antwort.length) return false;
+        for (let i = pos + 1; i <= pos + l; i++) if (klein(anfrage[i]) !== klein(antwort[i])) return false;
+        pos += 1 + l;
+      }
+      if (pos + 4 > anfrage.length || pos + 4 > antwort.length) return false;
+      for (let i = pos; i < pos + 4; i++) if (anfrage[i] !== antwort[i]) return false;   // Typ + Klasse genau
+      pos += 4;
+    }
+    const liste = eintraege(antwort);                             // wirft bei abgeschnittenen Einträgen
+    return (liste.length ? liste[liste.length - 1].ende : pos) === antwort.length;   // nichts fehlt, nichts hängt hinten dran
+  } catch (e) { return false; }
+}
 
 // Kleinste TTL der Antworten; ohne Antworten: SOA-Minimum (negative Antwort)
 function minTtl(buf) {
@@ -100,4 +134,4 @@ function fuerClient(antwort, { id, edns = null, alterSek = 0, udp = true, maxTtl
   return buf;
 }
 
-module.exports = { leseName, kopf, eintraege, rcode, minTtl, cnameZiele, fuerClient, TYP_OPT };
+module.exports = { leseName, kopf, eintraege, rcode, passtZu, minTtl, cnameZiele, fuerClient, TYP_OPT };

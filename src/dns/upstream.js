@@ -14,7 +14,7 @@ const { ttlVon, rcodeVon, RCODE, dnsPacket } = require('./paket');
 const roh = require('./roh');
 const { lookup } = require('../aufloeser');
 
-const TIMEOUT = 1500, CACHE_MAX = 20000, TTL_MIN = 5, TTL_MAX = 86400, NEG_MAX = 300;
+const TIMEOUT = 1500, CACHE_MAX = 20000, TTL_MIN = 5, TTL_MAX = 86400, NEG_MAX = 300, MAX_ANTWORT = 65535;
 
 // Sperrantwort eines filternden Anbieters (DNSforge, Mullvad AdBlock, AdGuard …): NXDOMAIN oder ausschließlich Null-Adressen (0.0.0.0 / ::)
 function sperrantwort(buf) {
@@ -62,13 +62,23 @@ class DohAnbieter {
         sitzung = this.verbindung();
         req = sitzung.request({ ':method': 'POST', ':path': this.pfad, 'content-type': 'application/dns-message', accept: 'application/dns-message', 'content-length': buf.length });
       } catch (e) { this.sitzungVerwerfen(); return ende(nein, e); }
-      const teile = []; let status = 0;
-      req.on('response', (h) => { status = h[':status']; });
-      req.on('data', (d) => teile.push(d));
+      // Antwort begrenzen und prüfen (25.11.2026): höchstens eine DNS-Nachricht groß, richtiger Inhaltstyp, Antwort auf GENAU diese Frage –
+      // sonst zählt es als Fehler des Anbieters (nächster wird gefragt) statt kaputt beim Client oder im Zwischenspeicher zu landen
+      const teile = []; let status = 0, typ = '', groesse = 0;
+      req.on('response', (h) => { status = h[':status']; typ = String(h['content-type'] || '').toLowerCase(); });
+      req.on('data', (d) => {
+        if (fertig) return;
+        groesse += d.length;
+        if (groesse > MAX_ANTWORT) { try { req.close(http2.constants.NGHTTP2_CANCEL); } catch (e) {} return ende(nein, new Error(`${this.name}: Antwort zu groß`)); }
+        teile.push(d);
+      });
       req.on('end', () => {
         if (status !== 200) return ende(nein, new Error(`${this.name}: HTTP ${status}`));
+        if (typ.split(';', 1)[0].trim() !== 'application/dns-message') return ende(nein, new Error(`${this.name}: keine DNS-Antwort (${typ || 'ohne Inhaltstyp'})`));
+        const antwort = Buffer.concat(teile);
+        if (!roh.passtZu(buf, antwort)) return ende(nein, new Error(`${this.name}: ungültige oder fremde DNS-Antwort`));
         this.ms = Number(process.hrtime.bigint() - start) / 1e6; this.anfragen++; this.zeitueberschreitungen = 0;
-        ende(ok, Buffer.concat(teile));
+        ende(ok, antwort);
       });
       req.on('error', (e) => { if (this.sitzung === sitzung) this.sitzung = null; ende(nein, e); });
       req.end(buf);
@@ -108,18 +118,19 @@ class Upstream {
     const lauf = ungefiltert ? `${k}|frei` : k;   // eine gleichzeitig laufende gefilterte Abfrage nicht mitbenutzen
     if (this.laufend.has(lauf)) return this.laufend.get(lauf);
     const p = (async () => {
-      let letzter = null, gesperrt = null;
+      let letzter = null, gesperrt = null, weich = null;
       for (const a of this.anbieter) {
         if (a.gesperrtBis > this.jetzt()) continue;
         try {
           const buf = await a.frage(upstreamBuf);
           a.fehler = 0;
           const rc = rcodeVon(buf);
+          // SERVFAIL/REFUSED/… = weicher Fehler: der Anbieter lebt (kein Aussetzen), aber der nächste wird gefragt; nur wenn keiner
+          // eine echte Antwort hat, geht die erste davon an den Client (25.11.2026 – vorher bekam er SERVFAIL, obwohl die Reserve lief)
+          if (rc !== RCODE.NOERROR && rc !== RCODE.NXDOMAIN) { weich = weich || { buf, anbieter: a.name }; continue; }
           if (ungefiltert && sperrantwort(buf)) { gesperrt = gesperrt || { buf, anbieter: a.name }; continue; }   // nächsten Anbieter fragen
-          if (rc === RCODE.NOERROR || rc === RCODE.NXDOMAIN) {
-            const ttl = ttlVon(buf), grenze = rc === RCODE.NXDOMAIN ? NEG_MAX : TTL_MAX;
-            if (ttl > 0) this.ablegen(k, buf, Math.max(TTL_MIN, Math.min(grenze, ttl)), a.name);
-          }
+          const ttl = ttlVon(buf), grenze = rc === RCODE.NXDOMAIN ? NEG_MAX : TTL_MAX;
+          if (ttl > 0) this.ablegen(k, buf, Math.max(TTL_MIN, Math.min(grenze, ttl)), a.name);
           return { buf, anbieter: a.name };
         } catch (e) {
           letzter = e; a.fehler++; a.letzterFehler = e.message;
@@ -127,6 +138,7 @@ class Upstream {
         }
       }
       if (gesperrt) return gesperrt;   // alle erreichbaren Anbieter sperren (oder den Namen gibt es wirklich nicht) – Antwort nicht speichern
+      if (weich) return weich;         // alle antworten mit Fehler (z. B. DNSSEC kaputt) – diese Antwort geht weiter, wird nicht gespeichert
       if (this.anbieter.every((a) => a.gesperrtBis > this.jetzt())) for (const a of this.anbieter) a.gesperrtBis = 0;   // nie alle dauerhaft aussperren
       throw letzter || new Error('kein Upstream eingerichtet');
     })().finally(() => this.laufend.delete(lauf));

@@ -560,9 +560,18 @@ function webServer(k) {
     if (prof && req.method === 'GET') return profilSenden(res, prof[1]);
     return nurText(res, 404, 'Nicht gefunden');
   }
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://x');
+  // Jede Anfrage läuft in `bearbeiten`; was dort trotzdem entkommt, fängt der `.catch` – eine unbehandelte Ablehnung beendete
+  // früher den ganzen Prozess (DNS mit), z. B. reichte `GET //` (ungültige Adresse vor dem try, 25.11.2026).
+  const server = http.createServer((req, res) => {
+    bearbeiten(req, res).catch((e) => {
+      console.error('[web]', e);
+      try { if (res.headersSent) return res.destroy(); res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SICHERHEIT }); res.end(JSON.stringify({ fehler: 'Interner Fehler' })); } catch (x) { req.socket?.destroy(); }
+    });
+  });
+  async function bearbeiten(req, res) {
     try {
+      let url;
+      try { url = new URL(req.url, 'http://x'); } catch (e) { throw new HttpFehler(400, 'Ungültige Adresse'); }
       const host = String(req.headers.host || '').toLowerCase().split(':')[0];
       if (unterwegs && unterwegs.istHost(host)) return await geraeteHost(req, res, url, host);
       const prof = /^\/unterwegs\/([A-Za-z0-9_-]{20,64})\/profil\.mobileconfig$/.exec(url.pathname);
@@ -602,7 +611,7 @@ function webServer(k) {
         return fs.createReadStream(sperrCa).pipe(res);
       }
       // statische Dateien
-      let datei = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
+      let datei; try { datei = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname); } catch (e) { throw new HttpFehler(400, 'Ungültige Adresse'); }
       const voll = path.join(statisch, path.normalize(datei).replace(/^(\.\.[/\\])+/, ''));
       if (!voll.startsWith(statisch) || !fs.existsSync(voll) || fs.statSync(voll).isDirectory()) { datei = '/index.html'; }
       const ziel = voll.startsWith(statisch) && fs.existsSync(voll) && !fs.statSync(voll).isDirectory() ? voll : path.join(statisch, 'index.html');
@@ -616,10 +625,11 @@ function webServer(k) {
     } catch (e) {
       const status = e.status || 500;
       if (status === 500) console.error('[web]', e);
-      if (!res.headersSent) res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SICHERHEIT });
+      if (res.headersSent) return res.destroy();   // Antwort schon begonnen (z. B. Livestrom) – abbrechen statt JSON anhängen
+      res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...SICHERHEIT });
       res.end(JSON.stringify({ fehler: status === 500 ? 'Interner Fehler' : e.message }));
     }
-  });
+  }
   return server;
 }
 

@@ -239,15 +239,17 @@ class Einstellungen {
     if (geaendert || migriert || !gelesen.vorgabenListen) this.speichern();
     return this;
   }
-  speichern() {
+  speichern(werte = this.werte) {
     fs.mkdirSync(this.verzeichnis, { recursive: true });
-    fs.writeFileSync(this.datei + '.tmp', JSON.stringify(this.werte, null, 1));
+    fs.writeFileSync(this.datei + '.tmp', JSON.stringify(werte, null, 1));
     fs.renameSync(this.datei + '.tmp', this.datei);
   }
+  // Erst schreiben, dann übernehmen (25.11.2026): scheitert das Speichern (volle Platte), bleibt alles beim alten Stand – Speicher
+  // und Datei laufen nie auseinander, der Fehler geht an den Aufrufer (Oberfläche: Meldung; Aufräum-Timer: nächster Takt versucht erneut)
   aendern(fn) {
     const kopie = JSON.parse(JSON.stringify(this.werte));
     const ergebnis = fn(kopie);
-    this.werte = kopie; this.speichern();
+    this.speichern(kopie); this.werte = kopie;
     for (const b of this.beobachter) try { b(this.werte); } catch (e) { console.error('[einstellungen]', e.message); }
     return ergebnis;
   }

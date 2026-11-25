@@ -84,10 +84,15 @@ class DnsServer extends EventEmitter {
     const start = process.hrtime.bigint(), ip = normIp(adresse), ms = () => Math.round(Number(process.hrtime.bigint() - start) / 1e4) / 100;
     let anfrage;
     try { anfrage = paket.lesen(buf); } catch (e) { return null; }
-    if (!anfrage.frage) return paket.antwort(anfrage, { rcode: 'FORMERR' });
-    const f = anfrage.frage;
+    // Antworten (QR=1) nie beantworten – sonst spielen sich zwei Resolver mit gefälschtem Absender endlos Pingpong (25.11.2026)
+    if (anfrage.antwort) return null;
     const extern = !!kontext?.extern;
+    // Fremde Netze bekommen nur REFUSED – auch keine FORMERR/NOTIMP mehr, damit kaputte Pakete von außen nichts auslösen
     if (!extern && !this.erlaubt.enthaelt(ip)) { this.zaehler.abgewiesen++; return paket.antwort(anfrage, { rcode: 'REFUSED' }); }
+    if (anfrage.opcode !== 'QUERY') return paket.antwort(anfrage, { rcode: 'NOTIMP' });
+    // genau eine Frage: gefiltert und zwischengespeichert wird nur die erste, eine zweite liefe sonst ungeprüft nach oben
+    if (!anfrage.frage || anfrage.fragen !== 1) return paket.antwort(anfrage, { rcode: 'FORMERR' });
+    const f = anfrage.frage;
     if (f.name === GESUNDHEIT) return paket.antwort(anfrage, { aa: true, answers: [{ name: f.name, type: 'TXT', class: 'IN', ttl: 0, data: ['ok'] }] });
     this.zaehler.anfragen++;
     if (extern) this.zaehler.unterwegs = (this.zaehler.unterwegs || 0) + 1;
@@ -142,11 +147,16 @@ class DnsServer extends EventEmitter {
     // Was der Betreiber ausdrücklich freigibt, darf auch ein filternder DoH-Anbieter nicht sperren
     const ungefiltert = e.grund === 'Geschützter Dienst' || e.grund === 'Freigabe' || e.grund === 'Hilfsangebot';
     try { r = await this.upstream.frage(anfrage, paket.upstreamAnfrage(anfrage), { ungefiltert }); } catch (err) {
-      this.zaehler.fehler++; this.melde({ ...basis, aktion: 'fehler', grund: err.message, profil: e.profil, ms: ms() });
+      this.zaehler.fehler++; if (e.grund !== 'Hilfsangebot') this.melde({ ...basis, aktion: 'fehler', grund: err.message, profil: e.profil, ms: ms() });   // Hilfsangebote nie ins Protokoll, auch nicht als Fehler
       return paket.antwort(anfrage, { rcode: 'SERVFAIL' });
     }
+    // Rcode zuerst (25.11.2026): erweiterter Rcode vom Upstream (BADVERS, BADCOOKIE …) betrifft UNSERE Anfrage nach oben, nicht die des Clients – und
+    // ginge bei Clients ohne EDNS als NOERROR durch (das OPT mit den oberen Bits fällt dort weg) → SERVFAIL. Andere Fehler (SERVFAIL/REFUSED, wenn alle
+    // Anbieter so antworten) gehen unverändert weiter – ohne CNAME-Prüfung und ohne Zeitkonto (es wurde nichts aufgelöst).
+    const rcOben = paket.rcodeVon(r.buf), fehlerOben = rcOben !== paket.RCODE.NOERROR && rcOben !== paket.RCODE.NXDOMAIN;
+    if (rcOben > 15) { this.zaehler.fehler++; if (e.grund !== 'Hilfsangebot') this.melde({ ...basis, aktion: 'fehler', grund: 'Upstream-Fehler (erweiterter Rcode)', profil: e.profil, ms: ms() }); return paket.antwort(anfrage, { rcode: 'SERVFAIL' }); }
     // CNAME-Tarnung: harmlose Domain zeigt auf einen gelisteten Tracker (nicht bei Pause/Freigabe – auch nicht, wenn die Domain nur auf einer Freigabeliste steht)
-    if (!['Pause', 'Freigabe', 'Freigabeliste', 'auf Freigabeliste', 'Geschützter Dienst', 'Hilfsangebot'].includes(e.grund)) {
+    if (!fehlerOben && !['Pause', 'Freigabe', 'Freigabeliste', 'auf Freigabeliste', 'Geschützter Dienst', 'Hilfsangebot'].includes(e.grund)) {
       // Eine Dienst-Sperre gilt dem Dienst, nicht fremden Diensten auf derselben Infrastruktur: ecs.office.com (Microsoft 365) läuft per CNAME
       // über mira.config.skype.com und svc.ha-teams.office.com (Teams). Wäre der eigene Dienst gesperrt, hätte schon der Filter oben geblockt.
       const eigenerDienst = this.filter.dienstVon(f.name);
@@ -162,7 +172,7 @@ class DnsServer extends EventEmitter {
     }
     // Zeitlimit: Nutzung vermerken; Antworten kurz halten (60 s), damit eine Sperre nach Ablauf schnell greift
     let maxTtl = 0;
-    if (this.zeitkonto && e.grund !== 'Pause') {
+    if (this.zeitkonto && e.grund !== 'Pause' && !fehlerOben) {
       const profil = this.filter.profilVon(geraet.id), dienst = profil.limits ? this.filter.dienstVon(f.name) : null;
       const ziele = dienst ? this.filter.limitZiele(profil, dienst) : [];
       if (ziele.length) { this.zeitkonto.vermerke(geraet.id, ziele, basis.ts); maxTtl = 60; }
@@ -184,6 +194,8 @@ class DnsServer extends EventEmitter {
       try {
         const q = paket.lesen(paket.dnsPacket.encode({ type: 'query', id: 0, flags: paket.dnsPacket.RECURSION_DESIRED, questions: [{ type: typ, name: ziel, class: 'IN' }] }));
         const r = await this.upstream.frage(q, paket.upstreamAnfrage(q), { ungefiltert: true });
+        const rcZiel = paket.rcodeVon(r.buf);
+        if (rcZiel !== paket.RCODE.NOERROR) throw new Error(`Upstream-Fehler ${rcZiel} für ${ziel}`);
         const p = paket.dnsPacket.decode(r.buf);
         const adressen = (p.answers || []).filter((x) => x.type === typ);
         if (!adressen.length) throw new Error(`keine ${typ}-Adresse für ${ziel}`);

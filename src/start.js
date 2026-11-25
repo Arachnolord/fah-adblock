@@ -148,11 +148,12 @@ async function main() {
   setTimeout(() => listen.aktualisieren().then((r) => Object.keys(r).length && console.log('[listen]', JSON.stringify(r))).catch(() => {}), 2000).unref();
   setInterval(() => listen.aktualisieren().catch(() => {}), 3600000).unref();
   // abgelaufene Pausen/Regeln aufräumen
-  setInterval(() => {
+  // Fehler (z. B. volle Platte) nur protokollieren, beim nächsten Takt erneut versuchen – ein Wurf hier beendete sonst jede Minute den Prozess
+  setInterval(() => { try {
     const jetzt = Date.now(), x = w();
     const alt = Object.values(x.pausen.geraete).some((t) => t < jetzt) || (x.pausen.global && x.pausen.global < jetzt) || x.regeln.some((r) => r.bis && r.bis < jetzt);
     if (alt) einst.aendern((y) => { for (const [g, t] of Object.entries(y.pausen.geraete)) if (t < jetzt) delete y.pausen.geraete[g]; if (y.pausen.global < jetzt) y.pausen.global = 0; y.regeln = y.regeln.filter((r) => !r.bis || r.bis > jetzt); });
-  }, 60000).unref();
+  } catch (e) { console.error('[fah-adblock] Aufräumen abgelaufener Pausen/Regeln:', e.message); } }, 60000).unref();
 
   const ende = () => { console.log('[fah-adblock] beende …'); for (const e of erweiterungen) { try { e.stoppen?.(); } catch (x) {} } dns.stoppen(); unterwegs.stoppen(); zeitkonto.speichern(); protokoll.schliessen(); process.exit(0); };
   process.on('SIGTERM', ende); process.on('SIGINT', ende);

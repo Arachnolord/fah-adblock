@@ -22,7 +22,8 @@ function lesen(buf) {
   const q = p.questions?.[0];
   const opt = (p.additionals || []).find((r) => r.type === 'OPT');
   return {
-    paket: p, id: p.id, ungueltig, frage: q ? { name: String(q.name || '').toLowerCase().replace(/\.$/, ''), typ: q.type, klasse: q.class } : null,
+    // antwort = QR-Bit gesetzt (eine Antwort, keine Anfrage); fragen = Anzahl im Frage-Abschnitt (gültig ist genau 1)
+    paket: p, id: p.id, ungueltig, antwort: p.type === 'response', opcode: p.opcode, fragen: (p.questions || []).length, frage: q ? { name: String(q.name || '').toLowerCase().replace(/\.$/, ''), typ: q.type, klasse: q.class } : null,
     flags: p.flags || 0, rd: !!((p.flags || 0) & FLAG_RD), cd: !!((p.flags || 0) & FLAG_CD),
     edns: opt ? { udpGroesse: Math.max(512, opt.udpPayloadSize || 512), do: !!(opt.flags & 0x8000) } : null,
   };
@@ -35,7 +36,7 @@ function optVon(anfrage) {
 // Antwort auf eine Anfrage mit eigenem Inhalt (Sperre, lokale Antwort, Fehler)
 function antwort(anfrage, { rcode = 'NOERROR', answers = [], authorities = [], aa = false } = {}) {
   const q = anfrage.paket.questions || [];
-  const flags = FLAG_QR | (anfrage.rd ? FLAG_RD : 0) | FLAG_RA | (aa ? FLAG_AA : 0) | (anfrage.cd ? FLAG_CD : 0) | (RCODE[rcode] ?? 0);
+  const flags = FLAG_QR | (anfrage.flags & 0x7800) | (anfrage.rd ? FLAG_RD : 0) | FLAG_RA | (aa ? FLAG_AA : 0) | (anfrage.cd ? FLAG_CD : 0) | (RCODE[rcode] ?? 0);
   return dnsPacket.encode({ type: 'response', id: anfrage.id, flags, questions: q, answers, authorities, additionals: optVon(anfrage) });
 }
 
