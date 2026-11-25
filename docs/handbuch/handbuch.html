@@ -92,7 +92,7 @@
     <h2>Handbuch</h2>
     <p>Einrichtung, Bedienung und jede Einstellung erklärt – inklusive der DNS-Einrichtung in UniFi.</p>
   </div>
-  <div class="fuss">Version 2026.11.25-9 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
+  <div class="fuss">Version 2026.11.25-10 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
 </section>
 
 <!-- ─────────────────────────── Inhalt ─────────────────────────── -->
@@ -722,7 +722,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
         <tr><td>Abmelden</td><td>Beendet <b>alle</b> Sitzungen dieses Nutzers – auch auf anderen Geräten. Ein abhandengekommenes Anmelde-Cookie ist danach wertlos.</td></tr>
       </table>
       <div class="kasten info"><span class="titel">Anmeldebremse</span><p>Je Absenderadresse sind 10 Fehlversuche in 15 Minuten erlaubt. Zusätzlich gilt je Nutzername, egal von wo: ab dem dritten Fehlversuch eine Wartezeit von 2 Sekunden, die sich bei jedem weiteren verdoppelt (bis 15 Minuten) – die Meldung nennt die Restwartezeit. Während dieser Wartezeit prüft FAH-Adblock fremde Geräte gar nicht. Ein Browser, in dem du dich hier schon einmal angemeldet hast, kommt mit dem <b>richtigen</b> Passwort trotzdem hinein (höchstens 5 Versuche je 15 Minuten) – ein Gerät, das dauernd „admin“ probiert, kann dich also nicht aussperren und bekommt selbst keinen zusätzlichen Rateversuch. Nach einem Passwortwechsel gilt das erst wieder nach der nächsten Anmeldung. Hinter dem Proxy braucht es dafür die Einstellung „Vertraute Proxys“.</p></div>
-      <div class="kasten info"><span class="titel">Haupt &amp; Ersatz: Abgleich verschlüsselt</span><p>Der Kopplungscode geht beim Abgleich nie über die Leitung. Jeder Abgleich ist signiert, gegen Wiederholung geschützt und vollständig verschlüsselt – wer im Netz mitliest, sieht weder Einstellungen noch Geheimnisse. Deshalb müssen Haupt und Ersatz <b>dieselbe Version</b> haben: Nach einem Update beide aktualisieren. Bis dahin meldet der Ersatz „alte Kopplung“, behält seinen Stand und übernimmt nicht. Die Uhrzeit beider Geräte darf höchstens 5 Minuten abweichen. Beim <b>Koppeln</b> selbst geht der Code einmal über die Oberfläche – deshalb nur im eigenen Netz koppeln.</p></div>
+      <div class="kasten info"><span class="titel">Haupt &amp; Ersatz: Abgleich verschlüsselt</span><p>Der Kopplungscode geht beim Abgleich nie über die Leitung. Jeder Abgleich ist signiert, gegen Wiederholung geschützt und vollständig verschlüsselt – wer im Netz mitliest, sieht weder Einstellungen noch Geheimnisse. Deshalb müssen Haupt und Ersatz <b>dieselbe Version</b> haben: Nach einem Update beide aktualisieren. Bis dahin meldet der Ersatz „alte Kopplung“ und behält seinen Stand; dauert es länger als 6 Minuten, übernimmt er den Schutz unterwegs, weil er den Haupt dann nicht mehr sicher erkennt – also beide zeitnah aktualisieren. Die Uhrzeit beider Geräte darf höchstens 5 Minuten abweichen. Beim <b>Koppeln</b> selbst geht der Code einmal über die Oberfläche – deshalb nur im eigenen Netz koppeln.</p></div>
       <table style="display:none">
       </table>
       <p>Unten stehen die Version und Zähler seit dem Start (Anfragen, abgewiesen, Fehler).</p>

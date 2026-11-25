@@ -182,7 +182,8 @@ function webServer(k) {
       x.geraete[gid] = g;
     });
     // Verlauf der neu verbundenen MACs dem Gerät zuschlagen (Statistik, Protokoll)
-    if (macs) for (const m of macs) if (!vorher.has(m)) protokoll.zusammenfuehren?.(m, gid, 0, w().geraete[gid]?.name || '');
+    if (macs) for (const m of macs) if (!vorher.has(m)) { protokoll.zusammenfuehren?.(m, gid, 0, w().geraete[gid]?.name || ''); zeitkonto?.zusammenfuehren?.(m, gid); }
+    if (macs) zeitkonto?.speichern?.();
     return { ok: true };
   });
   // Alle MAC-Adressen eines Geräts auf einmal (25.11.2026): die erste ist die Haupt-MAC, die übrigen „weitere MACs“. Weicht die erste von der
@@ -221,7 +222,8 @@ function webServer(k) {
       x.geraete[haupt] = g;
     });
     // Verlauf: bisherige ID und neu verbundene MACs dem Gerät zuschlagen
-    for (const m of [gid, ...weitere]) if (m !== haupt && (m === gid || !alteWeitere.includes(m))) protokoll.zusammenfuehren?.(m, haupt, 0, w().geraete[haupt]?.name || '');
+    for (const m of [gid, ...weitere]) if (m !== haupt && (m === gid || !alteWeitere.includes(m))) { protokoll.zusammenfuehren?.(m, haupt, 0, w().geraete[haupt]?.name || ''); zeitkonto?.zusammenfuehren?.(m, haupt); }
+    zeitkonto?.speichern?.();
     if (haupt !== gid) unterwegsWeiter?.(true);
     return { ok: true, id: haupt, weitereMacs: weitere };
   });
@@ -591,7 +593,9 @@ function webServer(k) {
       if (typeof s.sperrseite?.an === 'boolean') x.sperrseite = { an: s.sperrseite.an };
       // Kinderschutz: Meldungen (ältere Sicherungen bringen noch ntfy-Felder mit – werden nicht übernommen)
       if (s.meldungen && typeof s.meldungen === 'object') { const { url, thema, schluessel, schluesselGesetzt, ...rest } = s.meldungen; x.meldungen = { ...x.meldungen, ...rest }; }
-      if (s.unterwegs && typeof s.unterwegs === 'object') x.unterwegs = { an: !!s.unterwegs.an, basis: String(s.unterwegs.basis || ''), email: String(s.unterwegs.email || ''), geraete: { ...(s.unterwegs.geraete || {}) } };
+      if (s.unterwegs && typeof s.unterwegs === 'object') x.unterwegs = { an: !!s.unterwegs.an, basis: String(s.unterwegs.basis || ''), email: String(s.unterwegs.email || ''), geraete: { ...(s.unterwegs.geraete || {}) },
+        // eigene lokale Namen (Apple-Profil) gehören mit – vorher gingen sie am Ersatz bei jedem Abgleich und beim Wiederherstellen verloren (Codex R-R1-009)
+        ausnahmen: [...new Set((Array.isArray(s.unterwegs.ausnahmen) ? s.unterwegs.ausnahmen : []).map((d) => String(d).trim().toLowerCase().replace(/^\*?\./, '').replace(/\.$/, '')).filter((d) => AUSNAHME.test(d)))].slice(0, 50) };
       if (s.web?.vertrauteProxies !== undefined) x.web = { ...(x.web || {}), vertrauteProxies: s.web.vertrauteProxies.map((n) => netz(n).text) };
     });
   };

@@ -55,7 +55,7 @@ const TAG = 86400000;
 // Namen, die ein Apple-Gerät NIE über FAH-Adblock fragt, sondern im Netz, in dem es gerade ist (25.11.2026: reiserouter.lan ging am Mac nicht
 // mehr – FAH-Adblock kennt fremde lokale Namen nicht). Dazu eigene Ausnahmen aus den Einstellungen (z. B. interne Firmen-Domains).
 const LOKAL_VORGABE = ['lan', 'local', 'localdomain', 'home.arpa', 'internal', 'fritz.box', '10.in-addr.arpa', '168.192.in-addr.arpa',
-  ...Array.from({ length: 16 }, (_, i) => `${16 + i}.172.in-addr.arpa`), '254.169.in-addr.arpa', 'd.f.ip6.arpa', '8.e.f.ip6.arpa', '9.e.f.ip6.arpa', 'a.e.f.ip6.arpa', 'b.e.f.ip6.arpa'];
+  ...Array.from({ length: 16 }, (_, i) => `${16 + i}.172.in-addr.arpa`), '254.169.in-addr.arpa', 'c.f.ip6.arpa', 'd.f.ip6.arpa', '8.e.f.ip6.arpa', '9.e.f.ip6.arpa', 'a.e.f.ip6.arpa', 'b.e.f.ip6.arpa'];
 const AUSNAHME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const gleich = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const xml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));

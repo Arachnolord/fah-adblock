@@ -160,7 +160,9 @@ function bereinigen(w, v, melden = (t) => console.warn(`[einstellungen] ${t}`)) 
   };
   if (!objekt(w.unterwegs)) w.unterwegs = JSON.parse(JSON.stringify(v.unterwegs));
   const u = w.unterwegs;
-  w.unterwegs = { kurznamen: u.kurznamen ? 1 : 0, an: !!u.an, basis: /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(String(u.basis || '')) ? String(u.basis) : '', email: /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(u.email || '')) ? String(u.email) : '', geraete: {} };
+  w.unterwegs = { kurznamen: u.kurznamen ? 1 : 0, an: !!u.an, basis: /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(String(u.basis || '')) ? String(u.basis) : '', email: /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(u.email || '')) ? String(u.email) : '', geraete: {},
+    // eigene lokale Namen fürs Apple-Profil (25.11.2026) – fehlten hier, gingen also bei jedem Neustart/Abgleich verloren (Codex-Nachprüfung R1)
+    ausnahmen: [...new Set((Array.isArray(u.ausnahmen) ? u.ausnahmen : []).map((d) => String(d).trim().toLowerCase().replace(/^\*?\./, '').replace(/\.$/, '')).filter((d) => /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/.test(d)))].slice(0, 50) };
   for (const [gid, g] of Object.entries(objekt(u.geraete) ? u.geraete : {})) if (objekt(g) && /^dns-[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(String(g.kennung)) && /^[A-Za-z0-9_-]{20,64}$/.test(String(g.geheim))) w.unterwegs.geraete[gid] = { kennung: g.kennung, geheim: g.geheim, an: g.an !== false };
   w.web.vertrauteProxies = (Array.isArray(w.web.vertrauteProxies) ? w.web.vertrauteProxies : []).filter((n) => { try { netz(n); return true; } catch (e) { melden(`vertrauter Proxy „${n}“ ungültig – übersprungen`); return false; } });
   return w;

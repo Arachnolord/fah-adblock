@@ -45,7 +45,10 @@ class Auth {
   }
   laden() {
     // Kaputte Nutzerdatei (K7): nie wieder still admin/admin – wegsichern, letzten guten Stand (.bak) nehmen, sonst ein Einmal-Passwort
-    const r = lesenRobust(this.datei, { pruefen: (d) => Array.isArray(d.nutzer) && d.nutzer.length > 0 });
+    // Jeder Nutzer braucht Namen und einen vollständigen scrypt-Hash, Namen eindeutig – sonst gilt die Datei als beschädigt (Codex-Nachprüfung R5)
+    // Name in genau der Form, die die Anmeldung sucht (getrimmt, 1–64 Zeichen, keine Steuerzeichen) – sonst wäre er nie anmeldbar (Codex R-P23-008)
+    const nutzerOk = (n) => n && typeof n.name === 'string' && n.name === n.name.trim() && n.name.length >= 1 && n.name.length <= 64 && !/\p{Cc}/u.test(n.name) && /^scrypt:[A-Za-z0-9+/]{22}==:[A-Za-z0-9+/]{86}==$/.test(String(n.hash || ''));
+    const r = lesenRobust(this.datei, { pruefen: (d) => Array.isArray(d.nutzer) && d.nutzer.length > 0 && d.nutzer.every(nutzerOk) && new Set(d.nutzer.map((n) => n.name)).size === d.nutzer.length });
     const weg = r.kaputt ? path.basename(r.kaputt) : '';
     if (r.daten) {
       if (r.kaputt) { this.warnung = `Die Nutzerdatei war beschädigt (weggesichert als ${weg}) – der letzte gesicherte Stand gilt.`; console.error(`[auth] ${this.warnung}`); this.nutzer = r.daten; this.speichern(); }

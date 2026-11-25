@@ -252,6 +252,13 @@ try {
   const e2 = new Einstellungen({ verzeichnis: ev, geheimnis: 'z'.repeat(20), env: {} }).laden();
   pruefe('Update: vom Nutzer entfernte Vorgabeliste kommt nicht wieder', !e2.werte.listen.some((l) => l.id === 'frei-anudeep'));
   {
+    // Codex-Nachprüfung R1: eigene lokale Namen (Apple-Profil) überleben Neustart/Bereinigung, Unsinn fliegt raus
+    const ra = path.join(tmp, 'ausnahmen'); fs.mkdirSync(ra, { recursive: true });
+    fs.writeFileSync(path.join(ra, 'einstellungen.json'), JSON.stringify({ unterwegs: { an: true, basis: 'example.org', geraete: {}, ausnahmen: ['Firma.Intern', 'kein name!', '*.corp.example.com', 'firma.intern'] } }));
+    const eA = new Einstellungen({ verzeichnis: ra, geheimnis: 'z'.repeat(20), env: {} }).laden();
+    pruefe('Einstellungen (R1): eigene lokale Namen des Apple-Profils bleiben nach dem Laden erhalten (bereinigt, ohne Doppelte)', eA.werte.unterwegs.ausnahmen.join() === 'firma.intern,corp.example.com', JSON.stringify(eA.werte.unterwegs.ausnahmen));
+  }
+  {
     // 25.11.2026 (K13): scheitert das Speichern (volle Platte), wirft aendern und der Stand im Speicher bleibt unverändert (vorher schon übernommen,
     // ein erneuter Versuch kam nie, nach einem Neustart war der alte Stand wieder da); Beobachter werden dann nicht benachrichtigt
     let gemeldet = 0; e2.beobachten(() => gemeldet++);
@@ -611,12 +618,21 @@ try {
     fs.writeFileSync(path.join(ad, 'nutzer.json'), '{"nutzer": [');
     const a2 = new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) });
     const mitSicherung = !!a2.anmelden('admin', 'Geheim-12345', '9.9.9.1').cookie && !a2.anmelden('admin', 'admin', '9.9.9.2').cookie;
+    fs.writeFileSync(path.join(ad, 'nutzer.json'), '{"nutzer":[{}]}');
+    const a2b = new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) });
+    const semantisch = !!a2b.anmelden('admin', 'Geheim-12345', '9.9.9.5').cookie;   // R5: formal gültig, inhaltlich kaputt → .bak
+    const echt = JSON.parse(fs.readFileSync(path.join(ad, 'nutzer.json'), 'utf8')); echt.nutzer[0].name = ' admin ';   // R-P23-008: nicht anmeldbarer Name
+    fs.writeFileSync(path.join(ad, 'nutzer.json'), JSON.stringify(echt));
+    const semantisch2 = !!new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) }).anmelden('admin', 'Geheim-12345', '9.9.9.6').cookie;
+    const echt2 = JSON.parse(fs.readFileSync(path.join(ad, 'nutzer.json'), 'utf8')); echt2.nutzer[0].name = 'admin\u007f';   // R-R8-012: Steuerzeichen (DEL)
+    fs.writeFileSync(path.join(ad, 'nutzer.json'), JSON.stringify(echt2));
+    const semantisch3 = !!new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) }).anmelden('admin', 'Geheim-12345', '9.9.9.7').cookie;
     fs.rmSync(path.join(ad, 'nutzer.json.bak')); fs.writeFileSync(path.join(ad, 'nutzer.json'), 'kaputt');
     const a3 = new Auth({ verzeichnis: ad, geheimnis: 'q'.repeat(32) }); console.error = altErr;
     const einmal = (logs.join('\n').match(/Einmal-Passwort: (\S+)/) || [])[1];
     const standard = a3.anmelden('admin', 'admin', '9.9.9.3');
-    pruefe('Anmeldung: kaputte Nutzerdatei → letzter gesicherter Stand; ohne Sicherung kein admin/admin, sondern Einmal-Passwort aus dem Protokoll (Hinweis bei falscher Anmeldung); kaputte Dateien weggesichert',
-      mitSicherung && !standard.cookie && /Einmal-Passwort/.test(standard.fehler || '') && !!einmal && !!a3.anmelden('admin', einmal, '9.9.9.4').cookie && fs.readdirSync(ad).filter((x) => x.startsWith('nutzer.json.kaputt-')).length === 2,
+    pruefe('Anmeldung: kaputte Nutzerdatei (auch formal gültig, aber ohne Name/Hash) → letzter gesicherter Stand; ohne Sicherung kein admin/admin, sondern Einmal-Passwort aus dem Protokoll (Hinweis bei falscher Anmeldung); kaputte Dateien weggesichert',
+      mitSicherung && semantisch && semantisch2 && semantisch3 && !standard.cookie && /Einmal-Passwort/.test(standard.fehler || '') && !!einmal && !!a3.anmelden('admin', einmal, '9.9.9.4').cookie && fs.readdirSync(ad).filter((x) => x.startsWith('nutzer.json.kaputt-')).length >= 2,
       JSON.stringify({ mitSicherung, standard, einmal: !!einmal }));
   }
   pruefe('Anmeldung: Bremse je Adresse nach 10 Fehlversuchen (auch mit richtigem Passwort)', /Zu viele Versuche/.test(auth.anmelden('admin', 'admin', '3.3.3.3').fehler || ''));
@@ -765,6 +781,12 @@ try {
   const s2 = JSON.parse(JSON.stringify(sicherung)); s2.einstellungen.regeln = [{ id: 'wieder', typ: 'sperren', muster: 'zurueck.de', geltung: 'alle' }]; s2.einstellungen.web = { vertrauteProxies: ['172.16.0.0/12'] }; s2.einstellungen.sperrseite = { an: true };
   const gut = await post('/api/wiederherstellung', s2);
   const sperrUebernommen = einst.werte.sperrseite.an === true;
+  {
+    // Codex R-R1-009: eigene lokale Namen gehen beim Wiederherstellen (und am Ersatz beim Abgleich – gleicher Weg) mit, bereinigt
+    const s3 = JSON.parse(JSON.stringify(s2)); s3.einstellungen.unterwegs = { an: false, basis: '', email: '', geraete: {}, ausnahmen: ['Firma.Intern', 'kaputt!', 'firma.intern'] };
+    const r3 = await post('/api/wiederherstellung', s3);
+    pruefe('Wiederherstellung/Abgleich (R-R1-009): eigene lokale Namen des Apple-Profils werden übernommen (bereinigt)', r3.status === 200 && einst.werte.unterwegs.ausnahmen?.join() === 'firma.intern', JSON.stringify(einst.werte.unterwegs.ausnahmen));
+  }
   einst.aendern((x) => { x.sperrseite = { an: false }; });
   pruefe('Wiederherstellung: kaputte Sicherungen (null-Regel, ungültiges Netz, http-Anbieter, fehlendes Standardprofil, Listen-URL, unbekanntes Profil, Gateway) → 400 mit Klartext und nichts übernommen; gültige Sicherung übernommen (auch Sperrseite, sonst bliebe sie am Ersatz aus)',
     [k1, k2, k3, k4, k5, k6, k7].every((k) => /^400 Sicherung nicht übernommen: ./.test(k)) && unveraendert && gut.status === 200 && sperrUebernommen && einst.werte.regeln.length === 1 && einst.werte.regeln[0].id === 'wieder' && einst.werte.web.vertrauteProxies.join() === '172.16.0.0/12', [k1, k2, k3, k4, k5, k6, k7].join(' | '));
@@ -877,6 +899,24 @@ try {
     pruefe('Zeitkonto (K11): erneut gesendetes Paket zählt beim Haupt nur einmal; bestätigte Pakete verschwinden; nach Mitternacht kein Paket von gestern, ein altes Paket wird bestätigt, aber nicht gebucht',
       p1.length === 1 && p2.length === 2 && minH === minE && minH === 4 && offen === 0 && vorMitternacht.length === 1 && nachMitternacht.length === 0 && bestGestern.length === 1 && zkH.genutztMin('g', 'dienst:tiktok') === 0,
       JSON.stringify({ p1: p1.length, p2: p2.length, minH, minE, offen, vor: vorMitternacht.length, nach: nachMitternacht.length, best: bestGestern.length, heuteH: zkH.genutztMin('g', 'dienst:tiktok') }));
+    { // Codex-Nachprüfung R3/R4: Zusammenführen beim MAC-Umzug; keine unbestätigten Pakete verwerfen
+      let u2 = Date.UTC(2026, 10, 25, 10, 0); const zz = new Zeitkonto({ jetzt: () => u2, zeitzone: 'Europe/Berlin' });
+      zz.vermerke('alt', ['dienst:tiktok'], u2); u2 += 120000; zz.vermerke('alt', ['dienst:tiktok'], u2); zz.mehr('alt', 'dienst:tiktok', 15); zz.uebernehmenFremd({ alt: ['rubrik:spiele'] });
+      zz.vermerke('neu', ['dienst:tiktok'], u2);
+      const vorM = zz.genutztMin('alt', 'dienst:tiktok') + zz.genutztMin('neu', 'dienst:tiktok');
+      zz.zusammenfuehren('alt', 'neu');
+      const r3 = zz.genutztMin('neu', 'dienst:tiktok') === vorM && zz.extraMin('neu', 'dienst:tiktok') === 15 && zz.genutztMin('alt', 'dienst:tiktok') === 0 && zz.fremd.neu?.includes('rubrik:spiele') && !zz.fremd.alt && (zz.delta.neu?.['dienst:tiktok'] || 0) >= 180000 && !zz.delta.alt;
+      for (let i = 0; i < 40; i++) { u2 += 120000; zz.vermerke('neu', ['dienst:tiktok'], u2); zz.abholen(); }
+      const r4 = zz.abholen().length === 40;
+      // R-P23-007: große Warteschlange geht in Teilen (Größengrenze), Bestätigtes fällt weg, der Rest kommt beim nächsten Mal
+      const teil1 = zz.abholen(1500), groesse1 = JSON.stringify(teil1).length; zz.bestaetigen(teil1.map((p) => p.lauf)); const teil2 = zz.abholen(1500);
+      // R-R3-010: Haupt bildet Geräte-IDs des Ersatzes ab (weitere MAC → Hauptgerät)
+      const zk3 = new Zeitkonto({ jetzt: () => u2, zeitzone: 'Europe/Berlin' }); const tag3 = zz.heute().tag;
+      zk3.annehmen([{ lauf: 'lauf-kanon-0001', tag: tag3, daten: { 'wlan-mac': { 'dienst:tiktok': 120000 }, haupt: { 'dienst:tiktok': 60000 } } }], u2, (gid) => (gid === 'wlan-mac' ? 'haupt' : gid));
+      const r8 = zk3.genutztMin('haupt', 'dienst:tiktok') === 3 && zk3.genutztMin('wlan-mac', 'dienst:tiktok') === 0;
+      const r7 = r8 && teil1.length > 0 && teil1.length < 40 && groesse1 <= 1500 + 200 && teil2.length > 0 && teil2[0].lauf !== teil1[0].lauf && zz.abholen().length === 40 - teil1.length;
+      pruefe('Zeitkonto (R3/R4/R7): Zusammenführen bei MAC-Umzug übernimmt Minuten, Zusatzzeit, „aufgebraucht“ und Delta; 40 unbestätigte Pakete bleiben alle erhalten (vorher nur 30) und gehen in Teilen unter der Größengrenze', r3 && r4 && r7, JSON.stringify({ r3, r4, r7, anzahl: zz.abholen().length }));
+    }
   }
   H.sp.hauptWerden(); const spAlt = await E.sp.abgleichen();
   pruefe('Spiegel: neuer Code am Haupt → Ersatz meldet den Fehler, behält seinen Stand', /Kopplungscode/.test(spAlt.fehler || '') && E.ei.werte.regeln.some((r) => r.id === 'r-spaeter'));
@@ -1160,7 +1200,7 @@ try {
         (weg.flags & 15) === 2 && !logW.some((x) => /juuuport/.test(x.domain)) && (bvEdns.flags & 15) === 2 && (bvOhne.flags & 15) === 2 && !logB.some((x) => /juuuport/.test(x.domain)) && logB.some((x) => x.aktion === 'fehler' && x.domain === 'seite.de'),
         JSON.stringify({ weg: weg.flags & 15, logW: logW.map((x) => x.domain), bvEdns: bvEdns.flags & 15, bvOhne: bvOhne.flags & 15, logB: logB.map((x) => [x.domain, x.aktion]) }));
     }
-    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, lokale Namen (lan, fritz.box …) und eigene Ausnahmen am Gerät aufgelöst (ungültige abgelehnt), ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && prof.buf.toString().includes('<key>PayloadScope</key><string>System</string>') && !prof.buf.toString().includes('ProhibitDisablement') && /<key>DomainAction<\/key><string>NeverConnect<\/string><key>Domains<\/key><array>.*<string>lan<\/string>.*<string>fritz\.box<\/string>.*<string>firma\.intern<\/string><string>corp\.example\.com<\/string><\/array>/.test(prof.buf.toString()) && /<key>Action<\/key><string>Connect<\/string>/.test(prof.buf.toString()) && ausFalsch.status === 400 && ausOk.status === 200 && eW.werte.unterwegs.ausnahmen.join() === 'firma.intern,corp.example.com' && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
+    pruefe('Unterwegs: iPhone-Profil mit DoH-Adresse des Geräts, lokale Namen (lan, fritz.box …) und eigene Ausnahmen am Gerät aufgelöst (ungültige abgelehnt), ACME-Prüfung unter dem Gerätenamen erreichbar', prof.status === 200 && prof.typ === 'application/x-apple-aspen-config' && prof.buf.toString().includes(`https://${hostU}/dns-query/${gU.geheim}`) && prof.buf.toString().includes('<key>PayloadScope</key><string>System</string>') && !prof.buf.toString().includes('ProhibitDisablement') && prof.buf.toString().includes('<string>c.f.ip6.arpa</string>') && /<key>DomainAction<\/key><string>NeverConnect<\/string><key>Domains<\/key><array>.*<string>lan<\/string>.*<string>fritz\.box<\/string>.*<string>firma\.intern<\/string><string>corp\.example\.com<\/string><\/array>/.test(prof.buf.toString()) && /<key>Action<\/key><string>Connect<\/string>/.test(prof.buf.toString()) && ausFalsch.status === 400 && ausOk.status === 200 && eW.werte.unterwegs.ausnahmen.join() === 'firma.intern,corp.example.com' && ch.status === 200 && ch.buf.toString() === 'probetoken123.abc');
     if (mitOpenssl) {
       unt.speichereZertifikat(hostU, { schluessel: fs.readFileSync(path.join(kd, 'k.pem'), 'utf8'), kette: fs.readFileSync(path.join(kd, 'c.pem'), 'utf8'), bis: Date.now() + 80 * 86400000 });
       unt.dotPruefen(); await new Promise((r) => setTimeout(r, 200));
@@ -1289,12 +1329,12 @@ try {
       untE.paketHash = null; untE.paketUebernehmen(untH.paketFuerErsatz(code, null, untE.ersatzSchluessel()), code);
       const stE = bnE.status(), roh = fs.readFileSync(path.join(ed, 'benachrichtigung.json'), 'utf8');
       pruefe('Failover Benachrichtigungen: Ersatz bekommt Push-Schlüssel des Haupt, Abos und ntfy samt Zugangsschlüssel (vorher keinen eigenen Schlüssel; auf der Platte verschlüsselt)', bnVorher === null && bnE.oeffentlicherSchluessel() === bnH.oeffentlicherSchluessel() && stE.push.abos.length === 1 && stE.ntfy.thema === 'fah-testthema-123456' && stE.ntfy.schluesselGesetzt && stE.vomHaupt && !roh.includes('tk_testschluessel1') && !roh.includes(bnH.fuerErsatz().vapid.d), JSON.stringify(stE).slice(0, 200));
-      // Pfad-Ausbruch über einen gefälschten Namen; Haupt „gesehen“ auch bei abgelehntem Code
+      // Pfad-Ausbruch über einen gefälschten Namen; abgelehnter Code ist kein Lebenszeichen (25.11.2026, Codex R2)
       let ausbruch = false; try { untE.dateien('dns-x./../../sperrseite-ca'); } catch (e) { ausbruch = true; }
       const spE = new Spiegel({ verzeichnis: ed, einst: eW, geheimnis: 'e'.repeat(32), version: 'probe', anwenden: () => {}, holen: async () => { throw Object.assign(new Error('Der Haupt lehnt den Kopplungscode ab'), { antwort: true }); } });
       spE.z = { rolle: 'ersatz', haupt_url: 'http://127.0.0.1:1', code: verschluesseln('x', 'e'.repeat(32)), letzter_abgleich: Date.now() - 3600000 };
       await spE.abgleichen(); spE.stoppen();
-      pruefe('Sicherheit: Gerätename mit „..“ wird nie zum Dateipfad; Haupt antwortet (Code abgelehnt) → gilt als erreichbar, der Ersatz übernimmt nicht', ausbruch && Date.now() - spE.hauptZuletzt() < 5000);
+      pruefe('Sicherheit: Gerätename mit „..“ wird nie zum Dateipfad; unsignierte Ablehnung („Code abgelehnt“) zählt NICHT als Lebenszeichen des Haupts (könnte gefälscht sein)', ausbruch && Date.now() - spE.hauptZuletzt() > 3000000);
       eW.aendern((x) => { x.unterwegs.kurznamen = 0; x.unterwegs.geraete['aa:bb:cc:00:00:01'] = { kennung: 'dns-rrhp6y35co5wxeax', geheim: 'g'.repeat(32), an: true }; x.unterwegs.geraete['aa:bb:cc:00:00:02'] = { kennung: 'dns-fairphone', geheim: 'h'.repeat(32), an: true }; x.geraete['aa:bb:cc:00:00:01'] = { name: 'Gast Smartphone' }; });
       const umgestellt = untH.kurznamenUmstellen(), zweimal2 = untH.kurznamenUmstellen();
       pruefe('Unterwegs: alte Zufallsnamen einmalig auf kurze Namen umgestellt (dns-Gast-smartphone), eigene kurze Namen bleiben', umgestellt === 1 && zweimal2 === 0 && eW.werte.unterwegs.geraete['aa:bb:cc:00:00:01'].kennung === 'dns-Gast-smartphone' && eW.werte.unterwegs.geraete['aa:bb:cc:00:00:02'].kennung === 'dns-fairphone' && eW.werte.unterwegs.kurznamen === 1);

@@ -77,13 +77,24 @@ class Zeitkonto {
   // Der Ersatz schickt seine Nutzung in Paketen mit Lauf-ID und Tag. Ein Paket bleibt ausstehend, bis der Haupt seine ID bestätigt, und geht
   // bis dahin UNVERÄNDERT erneut mit; der Haupt zählt jede ID nur einmal und nur am selben Tag. Vorher wurde bei verlorener Antwort das ganze
   // Delta erneut (und kumuliert) gebucht, und Nutzung von vor Mitternacht konnte dem neuen Tag zugeschlagen werden.
-  /** Ersatz: neue Nutzung als Paket einreihen → alle ausstehenden Pakete von heute (höchstens 30) */
-  abholen() {
+  /** Ersatz: neue Nutzung als Paket einreihen → die ältesten ausstehenden Pakete von heute, zusammen höchstens `maxZeichen` groß (der Rest geht
+   *  beim nächsten Abgleich; Codex R-P23-007: eine riesige Anfrage würde der Haupt jedes Mal ablehnen und nie bestätigen) */
+  abholen(maxZeichen = 400000) {
     const z = this.heute();   // Tageswechsel zuerst: Nutzung von gestern geht nie an den neuen Tag
     const aus = Array.isArray(z.ausstehend) ? z.ausstehend : [];
-    if (Object.keys(this.delta).length) { aus.push({ lauf: crypto.randomBytes(12).toString('base64url'), tag: z.tag, daten: this.delta }); this.delta = {}; this.geaendert = true; }
-    z.ausstehend = aus.filter((p) => p.tag === z.tag).slice(-30);
-    return z.ausstehend.slice();
+    if (Object.keys(this.delta).length) {
+      // in Pakete von höchstens ~50 KB teilen (je Gerät höchstens 50 Ziele → ein Gerät passt immer in ein Paket), Codex R-R7-011
+      let stueck = {}, groesse = 0;
+      const weg = () => { if (Object.keys(stueck).length) aus.push({ lauf: crypto.randomBytes(12).toString('base64url'), tag: z.tag, daten: stueck }); stueck = {}; groesse = 0; };
+      for (const [gid, ziele] of Object.entries(this.delta)) { const g = JSON.stringify({ [gid]: ziele }).length; if (groesse && groesse + g > 50000) weg(); stueck[gid] = ziele; groesse += g; }
+      weg(); this.delta = {}; this.geaendert = true;
+    }
+    // Unbestätigte Pakete NIE still verwerfen (Codex-Nachprüfung R4): im 2-min-Takt sind das höchstens ~720 am Tag, danach gilt ein neuer Tag
+    z.ausstehend = aus.filter((p) => p.tag === z.tag);
+    if (z.ausstehend.length > 1000 && !this.warnte) { this.warnte = true; console.warn(`[zeitkonto] ${z.ausstehend.length} unbestätigte Pakete – der Haupt bestätigt seit Langem nicht`); }
+    const teil = []; let groesse = 0;
+    for (const p of z.ausstehend) { const g = Buffer.byteLength(JSON.stringify(p)) + 1; if (groesse + g + 2 > maxZeichen) break; teil.push(p); groesse += g; }   // Bytes inkl. Komma/Klammern; nie über dem Budget
+    return teil;
   }
   /** Ersatz: vom Haupt bestätigte Pakete streichen */
   bestaetigen(laeufe) {
@@ -93,19 +104,39 @@ class Zeitkonto {
     if (this.z.ausstehend.length !== vorher) this.geaendert = true;
   }
   /** Haupt: Pakete des Ersatzes annehmen → bestätigte Lauf-IDs (auch verworfene: anderer Tag oder schon gezählt) */
-  annehmen(pakete, ts = this.jetzt()) {
+  annehmen(pakete, ts = this.jetzt(), kanonisch = (gid) => gid) {
     if (!Array.isArray(pakete)) return [];
     const z = this.heute(), gesehen = (z.gesehen && typeof z.gesehen === 'object') ? z.gesehen : (z.gesehen = {}), ok = [];
-    for (const p of pakete.slice(0, 30)) {
+    for (const p of pakete.slice(0, 1500)) {
       if (!p || typeof p.lauf !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(p.lauf)) continue;
       ok.push(p.lauf);
       if (p.tag !== z.tag || Object.hasOwn(gesehen, p.lauf)) continue;
       gesehen[p.lauf] = ts;
-      this.hinzufuegen(p.daten, ts);
+      // Geräte-IDs des Ersatzes auf das Hauptgerät abbilden (weitere MAC-Adressen, Codex R-R3-010)
+      const daten = {}; for (const [gid, ziele] of Object.entries(p.daten && typeof p.daten === 'object' ? p.daten : {}).slice(0, 500)) { let k = gid; try { k = kanonisch(gid) || gid; } catch (e) {} daten[k] = { ...(daten[k] || {}), ...Object.fromEntries(Object.entries(ziele || {}).map(([z, ms]) => [z, ((daten[k] || {})[z] || 0) + (Number(ms) || 0)])) }; }
+      this.hinzufuegen(daten, ts);
     }
-    const ids = Object.keys(gesehen); if (ids.length > 2000) for (const id of ids.slice(0, ids.length - 2000)) delete gesehen[id];
+    const ids = Object.keys(gesehen); if (ids.length > 5000) for (const id of ids.slice(0, ids.length - 5000)) delete gesehen[id];
     this.geaendert = true;
     return ok;
+  }
+  /** Nutzung von `von` dem Gerät `nach` zuschlagen (MAC umgezogen oder verbunden, 25.11.2026, Codex-Nachprüfung R3): heutige Minuten,
+   *  letzte Zeitpunkte, Zusatzzeit, „aufgebraucht“ vom Haupt, Delta und ausstehende Pakete */
+  zusammenfuehren(von, nach) {
+    if (!schluesselOk(von) || !schluesselOk(nach) || von === nach) return false;
+    const z = this.heute(), a = Object.hasOwn(z.geraete, von) ? z.geraete[von] : null;
+    if (a) {
+      const b = this.eintrag(nach);
+      for (const [ziel, e] of Object.entries(a.ziele || {})) { const x = (b.ziele[ziel] ||= { ms: 0, letzte: 0 }); x.ms += Number(e?.ms) || 0; x.letzte = Math.max(x.letzte, Number(e?.letzte) || 0); }
+      for (const [ziel, m] of Object.entries(a.extra || {})) b.extra[ziel] = Math.max(b.extra[ziel] || 0, Number(m) || 0);
+      delete z.geraete[von];
+    }
+    const addiere = (ziel, quelle) => { for (const [k, ms] of Object.entries(quelle || {})) ziel[k] = (ziel[k] || 0) + (Number(ms) || 0); };
+    if (this.delta[von]) { addiere((this.delta[nach] ||= {}), this.delta[von]); delete this.delta[von]; }
+    if (this.fremd[von]) { this.fremd[nach] = [...new Set([...(this.fremd[nach] || []), ...this.fremd[von]])]; delete this.fremd[von]; }
+    for (const p of Array.isArray(z.ausstehend) ? z.ausstehend : []) if (p?.daten?.[von]) { addiere((p.daten[nach] ||= {}), p.daten[von]); delete p.daten[von]; }
+    this.geaendert = true;
+    return true;
   }
   hinzufuegen(nutzung, ts = this.jetzt()) {
     if (!nutzung || typeof nutzung !== 'object') return;

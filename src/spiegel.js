@@ -167,7 +167,8 @@ class Spiegel {
   get rolle() { return this.z.rolle || 'allein'; }
   /** Haupt: K = sha256(Kopplungscode) als 32 Byte (leer, wenn nicht gekoppelt oder nicht entschlüsselbar) */
   schluesselHaupt() { const h = this.z.k ? entschluesseln(this.z.k, this.geheimnis) : ''; return /^[0-9a-f]{64}$/.test(h || '') ? Buffer.from(h, 'hex') : Buffer.alloc(0); }
-  /** Wann der Haupt zuletzt geantwortet hat (Abgleich erfolgreich ODER eine HTTP-Antwort, z. B. Code abgelehnt) – für die Übernahme */
+  /** Wann der Haupt sich zuletzt ausgewiesen hat (Antwort ließ sich mit dem Kopplungsschlüssel öffnen) – für die Übernahme. Unsignierte
+   *  Fehlerantworten zählen nicht: sonst könnte ein Dritter im LAN mit gefälschtem 401/409 die Übernahme dauerhaft verhindern (25.11.2026). */
   hauptZuletzt() { return Math.max(this.z.letzter_abgleich || 0, this.z.haupt_gesehen || 0); }
   istErsatz() { return this.rolle === 'ersatz'; }
   status() {
@@ -293,7 +294,7 @@ class Spiegel {
         const h = hash(JSON.stringify(stand.einstellungen));
         if (h !== this.z.stand_hash) { this.anwenden(stand.einstellungen, { pausen: true }); this.z.stand_hash = h; this.z.letzte_aenderung = this.jetzt(); }
         this.z.letzter_abgleich = this.jetzt(); this.z.fehler = null;
-      } catch (e) { this.z.fehler = e.message; if (e.antwort) this.z.haupt_gesehen = this.jetzt(); }
+      } catch (e) { this.z.fehler = e.message; }   // Fehlerantworten (401/404/409) sind nicht signiert und zählen NICHT als Lebenszeichen (Codex-Nachprüfung R2)
       // Kinderschutz: eigene Ereignisse und Nutzung an den Haupt, dessen „aufgebraucht“ übernehmen – auch wenn die Übernahme des Stands oben
       // scheiterte (K4), aber nur, wenn der Haupt erreichbar war und sich ausgewiesen hat. Fehler stören den Abgleich nicht.
       if (this.austausch && stand) {

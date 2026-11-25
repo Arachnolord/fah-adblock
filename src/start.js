@@ -60,6 +60,7 @@ async function main() {
   // Auch Regeln, Pausen und Dienst-Sperren, die noch auf „geraet:ip:…“ zeigen, gehören jetzt der MAC
   const zuordnung = ({ von, nach, name, seit }) => {
     const n = protokoll.zusammenfuehren(von, nach, seit, name);
+    if (zeitkonto.zusammenfuehren(von, nach)) zeitkonto.speichern();   // Zeitkonto zieht mit (Codex R-R3-010)
     const x = w(), gVon = `geraet:${von}`, gNach = `geraet:${nach}`;
     const betroffen = x.geraete[von] || x.pausen.geraete[von] || x.regeln.some((r) => r.geltung === gVon) || Object.values(x.dienste || {}).some((d) => d.geltung === gVon);
     if (betroffen) einst.aendern((y) => {
@@ -133,7 +134,7 @@ async function main() {
     // Zeitkonto-Pakete bleiben bis zur Bestätigung im Zeitkonto ausstehend (K11) – hier nur die Meldungen zurücklegen
     zurueck: (d) => { meldungen.ausgang.unshift(...(d.meldungen?.ereignisse || []).slice(0, 500 - meldungen.ausgang.length)); },
     uebernehmen: (a, code) => { zeitkonto.bestaetigen(a?.nutzungBestaetigt); zeitkonto.uebernehmenFremd(a?.aufgebraucht); try { unterwegs.paketUebernehmen(a?.unterwegs, code); } catch (e) { console.warn('[unterwegs] Übergabe vom Haupt:', e.message); } },
-    empfangen: (d, code) => { meldungen.empfangen(d.meldungen || {}); const nutzungBestaetigt = zeitkonto.annehmen(d.nutzung); return { nutzungBestaetigt, aufgebraucht: zeitkonto.aufgebrauchtAlle((gid) => filter.profilVon(gid)), unterwegs: code ? unterwegs.paketFuerErsatz(code, d.unterwegsHash, typeof d.unterwegsSchluessel === 'string' && d.unterwegsSchluessel.length < 200 ? d.unterwegsSchluessel : null) : null }; },
+    empfangen: (d, code) => { meldungen.empfangen(d.meldungen || {}); const nutzungBestaetigt = zeitkonto.annehmen(d.nutzung, undefined, (gid) => geraete.haupt(gid)); /* weitere MAC → Hauptgerät */ return { nutzungBestaetigt, aufgebraucht: zeitkonto.aufgebrauchtAlle((gid) => filter.profilVon(gid)), unterwegs: code ? unterwegs.paketFuerErsatz(code, d.unterwegsHash, typeof d.unterwegsSchluessel === 'string' && d.unterwegsSchluessel.length < 200 ? d.unterwegsSchluessel : null) : null }; },
   };
   spiegel = new Spiegel({ verzeichnis: DATEN, einst, geheimnis: GEHEIM, version: VERSION, eigeneUrl, austausch, anwenden: () => { throw new Error('Weboberfläche noch nicht bereit'); } });
   // Optionale Erweiterungen (src/erweiterungen/<name>/) – fehlen sie, läuft alles wie gehabt
