@@ -92,7 +92,7 @@
     <h2>Handbuch</h2>
     <p>Einrichtung, Bedienung und jede Einstellung erklärt – inklusive der DNS-Einrichtung in UniFi.</p>
   </div>
-  <div class="fuss">Version 2026.11.25-6 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
+  <div class="fuss">Version 2026.11.25-7 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
 </section>
 
 <!-- ─────────────────────────── Inhalt ─────────────────────────── -->
@@ -646,6 +646,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
     <li>Gerät hinzufügen. Die Liste zeigt Geräte, die im Netz gesehen wurden, und alle, die UniFi kennt – auch wenn sie gerade nicht da sind (z. B. der Reiserouter unterwegs). Kennt UniFi ein Gerät nicht: „Anderes Gerät per MAC-Adresse“ wählen und MAC und Namen eintragen. Der Name ist kurz und lesbar (z. B. <span class="mono">dns-fairphone-gen-6.&lt;Basisdomain&gt;</span>), mit ✏️ änderbar.</li>
     <li>Alles Weitere macht FAH-Adblock selbst: Eintrag in FAH-Proxy (an der gerade aktiven Instanz, FAH-Proxy spiegelt ihn), Portfreigabe <b>TCP 853</b> in der UCG, Zertifikat: FAH-Proxy holt es für den Namen ohnehin (Caddy, bei Bedarf ZeroSSL) und gibt es an FAH-Adblock weiter – je Gerät nur EIN Zertifikat, Caddy erneuert es. Wird ein Gerät gelöscht oder der Schutz ausgeschaltet, verschwinden Eintrag bzw. Portfreigabe wieder.</li>
     <li><b>Android:</b> 🤖 Android zeigt den Weg: Einstellungen → Netzwerk &amp; Internet → Privates DNS → „Hostname des Anbieters“ → Namen eintragen. <b>iPhone/iPad:</b> Ein DNS-Server lässt sich am iPhone nicht eintippen – iOS braucht ein Profil. <b>🍏 Apple</b> (iPhone, iPad, Mac) zeigt die Kurzanleitung und einen Link, der auch unterwegs funktioniert (vom Mac kopieren und per AirDrop ans iPhone schicken): in Safari öffnen → Zulassen → Einstellungen → Profil geladen → Installieren; danach unter Allgemein → VPN und Geräteverwaltung → DNS prüfen, dass „FAH-Adblock“ ausgewählt ist. Das Profil nutzt DNS-over-HTTPS, immer – auch im WLAN. <b>Mac:</b> Profil laden → Systemeinstellungen → Allgemein → Geräteverwaltung → Profil doppelklicken → Installieren (Mac-Passwort; das Profil gilt für den ganzen Mac, sonst lehnt macOS es mit „VPN-Dienst konnte nicht installiert werden“ ab). Danach steht „FAH-Adblock DNS“ unter Netzwerk → Filter.</li>
+    <li><b>Lokale Namen:</b> Das Apple-Profil fragt Namen wie <code>*.lan</code>, <code>*.local</code>, <code>fritz.box</code> und <code>home.arpa</code> nicht bei FAH-Adblock, sondern im Netz, in dem das Gerät gerade ist – so geht z. B. <code>reiserouter.lan</code> am Reiserouter. Eigene Ausnahmen (z. B. interne Firmen-Domains) unter „Lokale Namen am Gerät auflösen“ eintragen und das Profil danach neu installieren. Android kennt solche Ausnahmen nicht.</li>
     <li><b>📡 MikroTik</b> (z. B. der Reiserouter, RouterOS 7): lädt eine kleine Einrichtungsdatei. Auf der Handy-Seite des Reiserouters hochladen – andere MikroTik-Router: unter Files hochladen, im Terminal <code>/import file-name=…</code>. Der Router fragt dann verschlüsselt bei FAH-Adblock (alle Geräte dahinter erscheinen als ein Gerät). Ohne Verbindung nach Hause fällt der Reiserouter auf seinen eigenen Werbeblocker zurück.</li>
   </ol>
   <div class="kasten"><span class="titel">Warum es manchmal dauert</span><p>Let's Encrypt stellt für eine Domain wie <span class="mono">selfhost.eu</span> höchstens 50 Zertifikate pro Woche aus – geteilt mit allen Nutzern dieser DynDNS-Domain. Ist das Kontingent aus, nimmt Caddy ZeroSSL; das kann einige Minuten dauern. Darum Gerätenamen möglichst nicht ständig ändern: jeder neue Name braucht ein neues Zertifikat.</p></div>
@@ -795,6 +796,7 @@ SESSION_SECRET=              # leer = wird beim ersten Start erzeugt</pre>
     <tr><td>Ersatz meldet „alte Kopplung“</td><td>Haupt und Ersatz haben verschiedene Versionen – beide auf denselben Stand bringen.</td></tr>
     <tr><td>Mac: „VPN-Dienst konnte nicht installiert werden“</td><td>Profil aus einer Version vor 2026.11.25-2 – in <i>📱 Unterwegs</i> neu laden und erneut installieren (macOS will DNS-Profile für den ganzen Mac).</td></tr>
     <tr><td>iPhone/iPad: „Das Feld ‚ProhibitDisablement‘ enthält einen ungültigen Wert“</td><td>Profil aus einer Version vor 2026.11.25-4 – in <i>📱 Unterwegs</i> mit „🍏 Apple“ neu laden und installieren.</td></tr>
+    <tr><td>Mac/iPhone: lokaler Name geht nicht (z. B. reiserouter.lan, Firmen-Intranet)</td><td>Profil vor 2026.11.25-7 – mit „🍏 Apple“ neu laden und installieren. Eigene interne Domains unter „Lokale Namen am Gerät auflösen“ eintragen.</td></tr>
     <tr><td>Kind kommt abends nicht in WhatsApp</td><td>Ruhezeit Messenger im Profil (Kinder ab Werk 21:00–06:30) – im Protokoll steht „Ruhezeit“.</td></tr>
   </table>
 </section>

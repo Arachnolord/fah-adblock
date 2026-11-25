@@ -91,7 +91,7 @@ function vorgaben(env = process.env) {
     // Kinderschutz-Meldungen – nur in FAH-Adblock (Ansicht Kinderschutz und Kachel), kein Fremddienst
     meldungen: { an: true, profile: ['kinder'], kategorien: ['anonym', 'jugendschutz', 'drogen', 'umgehung'], dienste: false, zeitlimit: true, stille: true, stilleMin: 30, ruheMin: 60 },
     // Schutz unterwegs (DNS-over-TLS/-HTTPS je Gerät): Basisdomain, deren Unternamen auf den Proxy zeigen; Geräte mit eigener Kennung
-    unterwegs: { an: false, basis: '', email: '', geraete: {} },
+    unterwegs: { an: false, basis: '', email: '', geraete: {}, ausnahmen: [] },
     migrationen: [...MIGRATIONEN],
     unifi: { url: env.UNIFI_URL || '', schluessel: null },
     // Weboberfläche hinter einem Reverse-Proxy (NPM): Adressen/Netze, deren X-Forwarded-For für die Anmeldebremse zählt

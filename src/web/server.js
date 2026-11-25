@@ -20,7 +20,7 @@ const { netz, netzliste, normIp, normDomain, listenIdOk } = require('../netz');
 const { lookup } = require('../aufloeser');
 const kinderschutz = require('../daten/kinderschutz');
 const { limitZielOk } = require('../einstellungen');
-const { neueKennung, kennungAus, KENNUNG, neuesGeheimnis } = require('../unterwegs');
+const { neueKennung, kennungAus, KENNUNG, neuesGeheimnis, AUSNAHME } = require('../unterwegs');
 const { ALT_TEXT } = require('../spiegel');
 
 const TYPEN = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
@@ -245,6 +245,14 @@ function webServer(k) {
     if (body.an !== undefined) u.an = !!body.an;
     if (body.basis !== undefined) { const b = String(body.basis || '').trim().toLowerCase().replace(/^\*?\./, ''); pruefe(!b || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(b), 'Basisdomain wie meinname.example.de angeben'); u.basis = b; }
     if (body.email !== undefined) { const m = String(body.email || '').trim(); pruefe(!m || /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(m), 'E-Mail-Adresse ungültig'); u.email = m; }
+    // Eigene lokale Namen, die Apple-Geräte selbst auflösen (z. B. interne Firmen-Domains) – je Zeile oder durch Komma/Leerzeichen getrennt
+    if (body.ausnahmen !== undefined) {
+      const liste = (Array.isArray(body.ausnahmen) ? body.ausnahmen : String(body.ausnahmen || '').split(/[\s,;]+/)).map((d) => String(d).trim().toLowerCase().replace(/^\*?\./, '').replace(/\.$/, '')).filter(Boolean);
+      const falsch = liste.filter((d) => !AUSNAHME.test(d));
+      pruefe(!falsch.length, `Ungültiger Name: ${falsch.slice(0, 3).join(', ')} (nur Domains wie firma.intern oder corp.example.com)`);
+      pruefe(liste.length <= 50, 'Höchstens 50 eigene Ausnahmen');
+      u.ausnahmen = [...new Set(liste)];
+    }
     einst.aendern((x) => { x.unterwegs = { ...x.unterwegs, ...u }; });
     unterwegsWeiter();
     return unterwegs ? unterwegs.status() : w().unterwegs;

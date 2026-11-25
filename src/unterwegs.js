@@ -52,6 +52,11 @@ const HOSTNAME = /^dns-[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0
 const privatV4 = (ip) => /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/.test(String(ip));
 
 const TAG = 86400000;
+// Namen, die ein Apple-Gerät NIE über FAH-Adblock fragt, sondern im Netz, in dem es gerade ist (25.11.2026: reiserouter.lan ging am Mac nicht
+// mehr – FAH-Adblock kennt fremde lokale Namen nicht). Dazu eigene Ausnahmen aus den Einstellungen (z. B. interne Firmen-Domains).
+const LOKAL_VORGABE = ['lan', 'local', 'localdomain', 'home.arpa', 'internal', 'fritz.box', '10.in-addr.arpa', '168.192.in-addr.arpa',
+  ...Array.from({ length: 16 }, (_, i) => `${16 + i}.172.in-addr.arpa`), '254.169.in-addr.arpa', 'd.f.ip6.arpa', '8.e.f.ip6.arpa', '9.e.f.ip6.arpa', 'a.e.f.ip6.arpa', 'b.e.f.ip6.arpa'];
+const AUSNAHME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const gleich = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const xml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
 const uuidAus = (text) => { const h = crypto.createHash('sha256').update(text).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`.toUpperCase(); };
@@ -366,6 +371,7 @@ class Unterwegs {
     const g = this.u.geraete[gid], host = this.hostVon(gid);
     if (!g || !host) return null;
     const name = this.nameVon(gid) || gid;
+    const ausnahmen = this.lokaleAusnahmen().map((d) => `<string>${xml(d)}</string>`).join('');
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -379,7 +385,10 @@ class Unterwegs {
         <key>ServerURL</key><string>https://${xml(host)}/dns-query/${xml(g.geheim)}</string>
       </dict>
       <key>OnDemandRules</key>
-      <array><dict><key>Action</key><string>Connect</string></dict></array>
+      <array>
+        <dict><key>Action</key><string>EvaluateConnection</string><key>ActionParameters</key><array><dict><key>DomainAction</key><string>NeverConnect</string><key>Domains</key><array>${ausnahmen}</array></dict></array></dict>
+        <dict><key>Action</key><string>Connect</string></dict>
+      </array>
       <key>PayloadDisplayName</key><string>FAH-Adblock DNS</string>
       <key>PayloadIdentifier</key><string>de.fah.adblock.dns.${xml(g.kennung)}</string>
       <key>PayloadType</key><string>com.apple.dnsSettings.managed</string>
@@ -399,6 +408,8 @@ class Unterwegs {
 </plist>
 `;
   }
+  /** Lokale Namen, die Apple-Geräte selbst auflösen: Vorgaben + eigene Ausnahmen (geprüft, ohne Doppelte) */
+  lokaleAusnahmen() { return [...new Set([...LOKAL_VORGABE, ...(Array.isArray(this.u.ausnahmen) ? this.u.ausnahmen : [])].map((d) => String(d).toLowerCase().replace(/^\*?\./, '').replace(/\.$/, '')).filter((d) => AUSNAHME.test(d)))].slice(0, 120); }
   /** MikroTik RouterOS 7 (z. B. der Reiserouter): DoH zu FAH-Adblock über den Gerätenamen (25.11.2026). Die Zeile „# fah-adblock-doh: …“
    *  ist zum sicheren Auslesen beim Hochladen gedacht (Datei NICHT als Skript ausführen müssen); die letzte Zeile ist der Befehl für Hand-Import. */
   mikrotik(gid) {
@@ -427,7 +438,7 @@ class Unterwegs {
   stoppen() { clearInterval(this.timer); clearInterval(this.wache); this.dotStoppen(); }
   status() {
     return {
-      an: !!this.u.an, basis: this.u.basis, email: this.u.email || '', ersatz: this.istErsatz(), uebernommen: this.uebernommen(), proxyZiel: this.zielUrl() || '',
+      an: !!this.u.an, basis: this.u.basis, email: this.u.email || '', ausnahmen: Array.isArray(this.u.ausnahmen) ? this.u.ausnahmen : [], ausnahmenVorgabe: LOKAL_VORGABE, ersatz: this.istErsatz(), uebernommen: this.uebernommen(), proxyZiel: this.zielUrl() || '',
       freigabe: this.freigabe, proxy: this.proxy ? this.proxy.status() : null, dot: { laeuft: !!this.server?.listening, port: this.port, bind: this.bind, fehler: this.fehler || null },
       zaehler: this.zaehler,
       geraete: Object.entries(this.u.geraete).map(([gid, g]) => {
@@ -438,4 +449,4 @@ class Unterwegs {
   }
 }
 
-module.exports = { Unterwegs, neueKennung, kennungAus, KENNUNG, neuesGeheimnis, vorpruefen, hostNorm, istGeraeteName };
+module.exports = { Unterwegs, neueKennung, kennungAus, KENNUNG, neuesGeheimnis, vorpruefen, hostNorm, istGeraeteName, AUSNAHME, LOKAL_VORGABE };
