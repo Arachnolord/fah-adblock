@@ -8,6 +8,10 @@
 #
 # manage.sh – FAH-Adblock Verwaltung (kein 'unzip' noetig, python3 genuegt)
 #
+#   ./manage.sh install           – Installation aus dem Git-Repo (git clone): legt .env + docker-compose.yml an,
+#                                   traegt beim ersten Mal IP, Gateway und eigenes Netz selbst ein, baut und startet.
+#                                   Spaeter nach 'git pull' erneut aufrufen = Update (data/ und .env bleiben).
+#                                   Vorgaben moeglich: DNS_BIND=… GATEWAY=… ERLAUBTE_NETZE=… ./manage.sh install
 #   ./manage.sh update            – Update aus fah-adblock_release.zip (hoechste (N) gewinnt)
 #   ./manage.sh update <zip>      – Update aus bestimmter ZIP
 #   ./manage.sh update --no-cache – Update mit vollstaendigem Neubau
@@ -105,6 +109,74 @@ compose_up() {
     if [ "${FORCE_RECREATE:-0}" = "1" ]; then $DC up -d --force-recreate; else $DC up -d; fi
 }
 
+# Frisch angelegte .env: eigene Adresse, Gateway und Netz eintragen (Vorgaben aus der Umgebung haben Vorrang).
+# Eine vorhandene .env wird NIE angefasst.
+env_einrichten() {
+    WEG="$(ip -4 route get 1.1.1.1 2>/dev/null | head -1 || true)"
+    IP="${DNS_BIND:-$(echo "$WEG" | sed -n 's/.* src \([0-9.]*\).*/\1/p')}"
+    GW="${GATEWAY:-$(echo "$WEG" | sed -n 's/.* via \([0-9.]*\).*/\1/p')}"
+    DEV="$(echo "$WEG" | sed -n 's/.* dev \([^ ]*\).*/\1/p')"
+    CIDR=""
+    if [ -n "$DEV" ] && [ -n "$IP" ]; then
+        CIDR="$(ip -4 -o addr show dev "$DEV" 2>/dev/null | awk -v ip="$IP" '{ split($4, a, "/"); if (a[1] == ip) print $4 }' | head -1 || true)"
+    fi
+    python3 - "$ENV_FILE" "$IP" "$GW" "$CIDR" "${ERLAUBTE_NETZE:-}" <<'PYEOF'
+import ipaddress, re, sys
+env, ip, gw, cidr, netze = sys.argv[1:6]
+try:
+    ipaddress.IPv4Address(ip)
+except ValueError:
+    print("  [ENV] Eigene IP-Adresse nicht ermittelbar."); sys.exit(2)
+if not netze:
+    try: netz = ipaddress.ip_interface(cidr).network if cidr else ipaddress.ip_network(ip + '/24', strict=False)
+    except ValueError: netz = ipaddress.ip_network(ip + '/24', strict=False)
+    netze = f"{netz},127.0.0.1/32"
+werte = {'DNS_BIND': ip, 'ERLAUBTE_NETZE': netze}
+if gw:
+    try: ipaddress.IPv4Address(gw); werte['GATEWAY'] = gw
+    except ValueError: pass
+text = open(env, encoding='utf-8').read()
+for k, v in werte.items():
+    if re.search(rf'^{k}=', text, re.M): text = re.sub(rf'^{k}=.*$', f'{k}={v}', text, flags=re.M)
+    else: text += f"\n{k}={v}\n"
+open(env, 'w', encoding='utf-8').write(text)
+for k in ('DNS_BIND', 'GATEWAY', 'ERLAUBTE_NETZE'):
+    if k in werte: print(f"  [ENV] {k}={werte[k]}")
+if 'GATEWAY' not in werte: print("  [ENV] GATEWAY nicht ermittelbar – Wert aus der Vorlage bleibt, bitte in .env pruefen.")
+PYEOF
+}
+
+# .env + docker-compose.yml einmalig aus den Vorlagen, data/ anlegen
+einrichten() {
+    if [ ! -f "$ENV_FILE" ]; then
+        cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"; echo "  [ENV] .env aus .env.example erzeugt."
+        if ! env_einrichten; then
+            echo "  Bitte DNS_BIND (IP dieses Rechners), GATEWAY (Router) und ERLAUBTE_NETZE in $ENV_FILE eintragen,"
+            echo "  dann erneut aufrufen – oder vorgeben: DNS_BIND=<IP> ./manage.sh $CMD"
+            exit 1
+        fi
+    fi
+    [ -f "$COMPOSE_FILE" ] || { cp "$SCRIPT_DIR/docker-compose.yml.example" "$COMPOSE_FILE"; echo "  [COMPOSE] docker-compose.yml erzeugt."; }
+    mkdir -p "$SCRIPT_DIR/data"
+}
+
+bauen_und_starten() {
+    echo "=== Baue & starte Container ==="
+    if [ "$NO_CACHE" = "1" ]; then $DC build --no-cache; else $DC build; fi
+    FORCE_RECREATE=1 compose_up
+}
+
+# Installation/Update direkt aus dem Git-Repo (ohne Release-ZIP)
+do_install() {
+    detect_compose
+    cd "$SCRIPT_DIR"
+    if [ ! -f "$SCRIPT_DIR/Dockerfile" ] || [ ! -d "$SCRIPT_DIR/src" ]; then echo "Fehler: kein FAH-Adblock-Code in $SCRIPT_DIR (Dockerfile/src fehlen)."; exit 1; fi
+    einrichten
+    bauen_und_starten
+    echo ""; warte_gesund; print_url
+    echo "=== Installation abgeschlossen ==="
+}
+
 do_update() {
     ZIP="$1"; [ -n "$ZIP" ] || ZIP="$(find_latest_zip)"
     if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then echo "Fehler: keine $ZIP_NAME gefunden (Ordner: $SCRIPT_DIR)."; exit 1; fi
@@ -147,15 +219,11 @@ with zipfile.ZipFile(sys.argv[1]) as z:
 print(f"  [CODE] {geschrieben} Datei(en) aktualisiert, {uebersprungen} geschuetzt.")
 PYEOF
 
-    # 3. Konfiguration beim ersten Mal anlegen
-    [ -f "$ENV_FILE" ] || { cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"; echo "  [ENV] .env aus .env.example erzeugt – DNS_BIND pruefen!"; }
-    [ -f "$COMPOSE_FILE" ] || { cp "$SCRIPT_DIR/docker-compose.yml.example" "$COMPOSE_FILE"; echo "  [COMPOSE] docker-compose.yml erzeugt."; }
-    mkdir -p "$SCRIPT_DIR/data"
+    # 3. Konfiguration beim ersten Mal anlegen (IP/Gateway/Netz werden selbst ermittelt)
+    einrichten
 
     # 4. Bauen und Container ersetzen
-    echo "=== Baue & starte Container ==="
-    if [ "$NO_CACHE" = "1" ]; then $DC build --no-cache; else $DC build; fi
-    FORCE_RECREATE=1 compose_up
+    bauen_und_starten
 
     # 5. aeltere Release-ZIPs wegraeumen (die eingespielte bleibt als Archiv)
     for alt in "$SCRIPT_DIR"/fah-adblock_release\ \(*\).zip; do if [ -f "$alt" ] && [ "$alt" != "$ZIP" ]; then rm -f "$alt"; fi; done
@@ -182,8 +250,10 @@ print_url() {
 
 CMD="${1:-}"
 case "$CMD" in
+    install) shift; for a in "$@"; do case "$a" in --no-cache) NO_CACHE=1 ;; esac; done; do_install ;;
     update) shift; ZIP=""; for a in "$@"; do case "$a" in --no-cache) NO_CACHE=1 ;; *) ZIP="$a" ;; esac; done; do_update "$ZIP" ;;
-    start)   detect_compose; compose_up; warte_gesund; print_url ;;
+    start)   [ -f "$ENV_FILE" ] && [ -f "$COMPOSE_FILE" ] || { echo "Noch nicht eingerichtet – zuerst ./manage.sh install"; exit 1; }
+             detect_compose; compose_up; warte_gesund; print_url ;;
     stop)    detect_compose; cd "$SCRIPT_DIR"; $DC down ;;
     restart) detect_compose; cd "$SCRIPT_DIR"; $DC down; compose_up; warte_gesund; print_url ;;
     status)  detect_compose; cd "$SCRIPT_DIR"; $DC ps ;;
@@ -193,5 +263,5 @@ case "$CMD" in
     port)
         if [ -z "${2:-}" ]; then echo "WebGUI-Port: $(env_wert WEB_PORT)"; else
             sed -i "s/^WEB_PORT=.*/WEB_PORT=$2/" "$ENV_FILE"; detect_compose; cd "$SCRIPT_DIR"; FORCE_RECREATE=1 compose_up; print_url; fi ;;
-    *) echo "FAH-Adblock – manage.sh"; echo "Kommandos: update [<zip>] [--no-cache] | start | stop | restart | status | logs | url | port [<PORT>] | test" ;;
+    *) echo "FAH-Adblock – manage.sh"; echo "Kommandos: install [--no-cache] | update [<zip>] [--no-cache] | start | stop | restart | status | logs | url | port [<PORT>] | test" ;;
 esac

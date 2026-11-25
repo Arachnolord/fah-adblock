@@ -92,7 +92,7 @@
     <h2>Handbuch</h2>
     <p>Einrichtung, Bedienung und jede Einstellung erklärt – inklusive der DNS-Einrichtung in UniFi.</p>
   </div>
-  <div class="fuss">Version 2026.11.25-11 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
+  <div class="fuss">Version 2026.11.25-12 · Stand 25. November 2026 · © 2026 Fabian Hammer</div>
 </section>
 
 <!-- ─────────────────────────── Inhalt ─────────────────────────── -->
@@ -736,6 +736,7 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
   <p>FAH-Adblock läuft als ein Docker-Container im Host-Netz des NAS unter <code>/volume3/docker/fah-adblock</code>. Alle Befehle dort per SSH ausführen.</p>
   <table>
     <tr><th>Befehl</th><th>Was er macht</th></tr>
+    <tr><td><code>./manage.sh install</code></td><td>Installation aus dem Git-Repo (ohne Release-ZIP): legt <code>.env</code> und <code>docker-compose.yml</code> an, trägt beim ersten Mal die eigene IP, das Gateway und das eigene Netz selbst ein, baut und startet. Nach <code>git pull</code> erneut aufrufen = Update.</td></tr>
     <tr><td><code>./manage.sh update</code></td><td>Update aus <code>fah-adblock_release.zip</code> im selben Ordner (bei mehreren Downloads gewinnt die höchste „(N)“). Baut neu, startet und wartet, bis DNS und Oberfläche antworten.</td></tr>
     <tr><td><code>./manage.sh update --no-cache</code></td><td>Wie oben, mit komplettem Neubau des Containers.</td></tr>
     <tr><td><code>./manage.sh status</code></td><td>Zeigt, ob der Container läuft und gesund ist.</td></tr>
@@ -745,11 +746,13 @@ DNS        = 192.168.1.23, 192.168.1.1</pre>
     <tr><td><code>./manage.sh port [PORT]</code></td><td>Port der Oberfläche anzeigen oder ändern.</td></tr>
     <tr><td><code>./manage.sh test</code></td><td>DNS-Probe gegen den laufenden Dienst (11 Prüfungen: Werbung geblockt, erlaubt, lokale Zone, TCP, Firefox-Prüf-Domain …).</td></tr>
   </table>
+  <h3>Installation aus dem Git-Repo</h3>
+  <p>Wer den Quellcode hat, braucht keine Release-ZIP: Repo herunterladen (<code>git clone</code> oder als ZIP), in den Ordner wechseln und <code>./manage.sh install</code> aufrufen. Voraussetzung: ein Linux-Rechner oder NAS mit Docker (Compose) und <code>python3</code>, feste IP im Heimnetz, Port 53 frei. Beim ersten Mal ermittelt <code>install</code> die eigene Adresse (<code>DNS_BIND</code>), das Gateway und das eigene Netz (<code>ERLAUBTE_NETZE</code>) und schreibt sie in die neue <code>.env</code>; eine vorhandene <code>.env</code> bleibt unberührt. Abweichende Werte lassen sich vorgeben, z. B. <code>DNS_BIND=192.168.1.23 ./manage.sh install</code>. Aktualisieren: <code>git pull</code>, dann wieder <code>./manage.sh install</code> – <code>data/</code> und <code>.env</code> bleiben.</p>
   <h3>Was ein Update anfasst – und was nicht</h3>
   <table>
     <tr><th>Teil</th><th>Beim Update</th></tr>
     <tr><td>Programm (src, public, tools, Dockerfile)</td><td>wird ersetzt</td></tr>
-    <tr><td><code>.env</code>, <code>docker-compose.yml</code></td><td>bleiben unverändert (nur bei der Erstinstallation aus den Vorlagen angelegt)</td></tr>
+    <tr><td><code>.env</code>, <code>docker-compose.yml</code></td><td>bleiben unverändert (nur bei der Erstinstallation aus den Vorlagen angelegt, IP, Gateway und Netz dabei selbst ermittelt)</td></tr>
     <tr><td><code>data/</code> (Einstellungen, Listen, Protokoll, Zugang)</td><td>wird nie angefasst</td></tr>
     <tr><td>Port der Oberfläche</td><td>bei der Erstinstallation automatisch ein freier Port (Portautomatik), danach fest</td></tr>
     <tr><td>DNS-Port 53</td><td>fest – ist er durch einen anderen Dienst belegt, bricht der Start mit Hinweis ab</td></tr>

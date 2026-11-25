@@ -57,6 +57,21 @@ Nur MIT/Apache-2.0 – auch transitiv. Einzige Fremdbibliothek: `dns-packet` (MI
 `@leichtgewicht/ip-codec` (MIT). Alles andere Node-24-Bordmittel. Prüfung: `node tools/lizenzprobe.mjs`.
 Blocklisten werden nicht mitgeliefert (Lizenzen der Listen gelten für deren Nutzung).
 
+## Installation aus dem Repo
+Voraussetzung: Linux-Rechner oder NAS mit Docker (Compose) und `python3`, feste IP im Heimnetz, Port 53 frei.
+```
+git clone <Adresse dieses Repos> fah-adblock
+cd fah-adblock
+./manage.sh install
+```
+- Beim ersten Mal legt `install` `.env` und `docker-compose.yml` aus den Vorlagen an, trägt die eigene IP (`DNS_BIND`),
+  das Gateway und das eigene Netz (`ERLAUBTE_NETZE`) selbst ein, baut das Image und startet den Container.
+- Andere Werte vorgeben: `DNS_BIND=192.168.1.23 GATEWAY=192.168.1.1 ./manage.sh install` (eine vorhandene `.env` bleibt unberührt).
+- Als ZIP heruntergeladen (Knopf „Code“ → „Download ZIP“): `sh manage.sh install`.
+- Aktualisieren: `git pull && ./manage.sh install` – `data/` und `.env` bleiben.
+- Danach: Oberfläche `http://<IP>:8053` (Erstanmeldung `admin / admin`, Passwort sofort ändern), dann im Router bzw.
+  an den Geräten diese IP als DNS-Server eintragen (Handbuch Kapitel 3).
+
 ## Betrieb (NAS)
 ```
 /volume3/docker/fah-adblock/
