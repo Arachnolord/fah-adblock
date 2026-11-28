@@ -65,7 +65,7 @@ async function foto(s, name) { const r = await s.cdp('Page.captureScreenshot', {
 
 async function main() {
   const port = await freierPort(), profil = fs.mkdtempSync(path.join(os.tmpdir(), 'fah-adblock-ui-'));
-  const chrome = spawn(CHROME, ['--headless=new', '--hide-scrollbars', `--remote-debugging-port=${port}`, `--user-data-dir=${profil}`, 'about:blank'], { stdio: 'ignore' });
+  const chrome = spawn(CHROME, ['--headless=new', '--use-mock-keychain', '--hide-scrollbars', `--remote-debugging-port=${port}`, `--user-data-dir=${profil}`, 'about:blank'], { stdio: 'ignore' });
   const s = await verbinde(port);
   let verkehr = null;
   try {

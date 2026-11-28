@@ -2,7 +2,7 @@
 # Handbuch als PDF: sh docs/handbuch/pdf.sh  (Chrome headless; Chrome beendet sich nach --print-to-pdf nicht immer → wird nach fertigem PDF beendet)
 cd "$(dirname "$0")" || exit 1
 PROFIL="$(mktemp -d)"; rm -f FAH-Adblock_Handbuch.pdf
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --no-pdf-header-footer --user-data-dir="$PROFIL" \
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --use-mock-keychain --disable-gpu --no-pdf-header-footer --user-data-dir="$PROFIL" \
   --allow-file-access-from-files --run-all-compositor-stages-before-draw --print-to-pdf="$PWD/FAH-Adblock_Handbuch.pdf" "file://$PWD/handbuch.html" >/dev/null 2>&1 &
 PID=$!
 python3 - "$PID" <<'PY'

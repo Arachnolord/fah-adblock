@@ -38,7 +38,7 @@ async function foto(s, name, selektor = null, { rand = 0, hoehe = 0 } = {}) {
   fs.writeFileSync(path.join(AUS, name), Buffer.from(r.result.data, 'base64')); console.log('✓', name);
 }
 const port = await freierPort(), profil = fs.mkdtempSync(path.join(os.tmpdir(), 'fah-hb-'));
-const chrome = spawn(CHROME, ['--headless=new', '--hide-scrollbars', `--remote-debugging-port=${port}`, `--user-data-dir=${profil}`, 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(CHROME, ['--headless=new', '--use-mock-keychain', '--hide-scrollbars', `--remote-debugging-port=${port}`, `--user-data-dir=${profil}`, 'about:blank'], { stdio: 'ignore' });
 const s = await verbinde(port);
 let verkehr;
 try {
